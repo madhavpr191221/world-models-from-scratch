@@ -212,32 +212,35 @@ def covariance_loss(z: Tensor) -> Tensor:
 
 def invariance_loss(z_a: Tensor, z_b: Tensor) -> Tensor:
     """
-    L_inv(Z', Z'') = (1/N) sum_i || z_i' - z_i'' ||^2
+    L_inv(Z', Z'') = mean squared error between Z' and Z'', averaged over
+    ALL elements (N * d), matching the official VICReg paper's released
+    pseudocode (Algorithm 1, Appendix A): `sim_loss = mse_loss(z_a, z_b)`.
 
-    Pulls the two augmented views of the same input together. This is the
-    only term that requires a correspondence between z_a and z_b (same
-    underlying image, two different augmentations) -- the variance and
-    covariance terms only ever see one view's statistics at a time.
+    NOTE: this differs from the paper's prose equation (Eq. 5), which
+    states s(Z,Z') = (1/N) sum_i ||z_i - z_i'||^2 -- i.e. sum over the
+    feature dimension, then mean over the batch. That prose formula and
+    the paper's own pseudocode disagree by a factor of d (the embedding
+    dimension): mse_loss computes (1/(N*d)) sum_i sum_j (.)^2, while the
+    prose formula is (1/N) sum_i sum_j (.)^2.
 
-    z_a, z_b: (N, d), must contain corresponding pairs (z_a[i] and z_b[i]
-    are the two views of the same input). Returns a scalar.
+    We match the PSEUDOCODE here, since that is what was actually run to
+    produce every result in the paper, and what the published
+    lambda=25, mu=25, nu=1 hyperparameters were calibrated against.
+    Using the prose formula instead (an earlier version of this function
+    did) makes L_inv's gradient ~d times larger than intended relative
+    to L_var and L_cov, which causes the optimizer to minimize L_inv by
+    collapsing the representation rather than learning genuine
+    invariances -- confirmed empirically by isolating this exact change
+    against a known-working reference implementation.
+
+    z_a, z_b: (N, d). Returns a scalar.
     """
     if z_a.shape != z_b.shape:
         raise ValueError(
             f"invariance_loss requires matching shapes, got {z_a.shape} "
             f"and {z_b.shape}."
         )
-    # NOTE: torch.nn.functional.mse_loss with default reduction averages
-    # over ALL elements (N * d), i.e. it would compute (1/(N*d)) sum_i sum_j
-    # (.)^2 -- off by a factor of d from the derivation, which sums the
-    # squared norm per-sample (sum over j) and only then averages over the
-    # batch (mean over i):
-    #     L_inv = (1/N) sum_i || z_i' - z_i'' ||^2
-    #           = (1/N) sum_i [ sum_j (z_ij' - z_ij'')^2 ]
-    # So: sum over the feature dimension first, then mean over the batch.
-    squared_norms = ((z_a - z_b) ** 2).sum(dim=1)  # (N,), one ||.||^2 per sample
-    return squared_norms.mean()
-
+    return torch.nn.functional.mse_loss(z_a, z_b)
 
 @dataclass
 class VICRegLossOutput:

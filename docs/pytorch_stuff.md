@@ -564,6 +564,29 @@ $$\mathcal{L}_\text{VICReg} = \lambda\,\mathcal{L}_\text{inv}(Z', Z'')
 | $\gamma$ | 1 | target std per dimension in $\mathcal{L}_\text{var}$ |
 | $\epsilon$ | $10^{-4}$ | numerical stability inside $\sqrt{\cdot}$ in $\mathcal{L}_\text{var}$ |
 
+**CRITICAL — the invariance term's normalization (corrected after a real
+collapse bug, see case study below):**
+
+The paper's PROSE, Eq. (5), states:
+
+$$s(Z,Z') = \frac{1}{n}\sum_i \|\mathbf{z}_i - \mathbf{z}_i'\|_2^2
+\qquad\text{(sum over $d$ features, then mean over $n$ samples)}$$
+
+But the paper's own RELEASED PSEUDOCODE (Algorithm 1, Appendix A) computes
+it differently:
+
+$$\texttt{sim\_loss = mse\_loss(z\_a, z\_b)}
+\qquad\text{i.e. } \frac{1}{nd}\sum_i\sum_j(z_{ij}-z'_{ij})^2$$
+
+These disagree by a factor of $d$ (the embedding/projector dimension).
+**Our code matches the pseudocode** (`mse_loss`), since that is what was
+actually run to produce every published result and what $\lambda=25,
+\mu=25,\nu=1$ were calibrated against. Implementing the prose formula
+literally makes $\mathcal{L}_\text{inv}$'s gradient $\approx d\times$ too
+large relative to $\mathcal{L}_\text{var}$ and $\mathcal{L}_\text{cov}$,
+which empirically causes representational collapse (confirmed by direct
+experiment — see case study below).
+
 **At collapse** ($f_{\boldsymbol{\theta}}(\mathbf{x}) = \mathbf{c}$ for all $\mathbf{x}$):
 
 $$\mathcal{L}_\text{inv} = 0, \quad \mathcal{L}_\text{var} \approx \gamma = 1,
@@ -576,3 +599,132 @@ Both $\mathcal{L}_\text{var}$ and $\mathcal{L}_\text{cov}$ jointly push
 $S \to \gamma^2 I$ (the sample covariance toward a scaled identity),
 while $\mathcal{L}_\text{inv}$ alone would be satisfied at collapse
 with zero loss.
+
+---
+
+## Case study: diagnosing representational collapse during real training
+
+This section documents an actual debugging investigation, kept here as a
+template for the diagnostic process, not just the bug. The mathematical
+signature of collapse, the systematic elimination method used to find the
+real cause, and the eventual root cause are all worth internalizing —
+this kind of bug (a subtle but consequential mismatch between a paper's
+written math and its actual released code) is common in ML research code,
+and the *method* used to catch it generalizes far beyond this one case.
+
+### The mathematical signature of collapse (what to watch for)
+
+At collapse, $\mathbf{f}_{\boldsymbol\theta}(\mathbf{x})=\mathbf{c}$ for
+all $\mathbf{x}$, so $\tilde Z = Z-\bar Z = 0$, hence
+$S=\frac{1}{N-1}\tilde Z^\top\tilde Z = 0$ entirely (every entry, diagonal
+and off-diagonal). Tracing this through each loss term:
+
+$$\mathcal{L}_\text{var} = \frac{1}{d}\sum_j\max(0,\gamma-\sqrt{S_{jj}+\epsilon})
+\xrightarrow{S_{jj}\to 0} \gamma \quad\text{(rises to its CEILING)}$$
+
+$$\mathcal{L}_\text{cov} = \frac{1}{d}\sum_{j\neq k}S_{jk}^2
+\xrightarrow{S_{jk}\to 0} 0 \quad\text{(crashes to exactly zero)}$$
+
+$$\mathcal{L}_\text{inv} = \text{mse}(Z,Z')
+\xrightarrow{Z=Z'=\mathbf{c}} 0 \quad\text{(also goes to zero)}$$
+
+**The diagnostic signature is all three happening together**, in this
+specific direction: $\mathcal{L}_\text{var}\to\gamma$ (not $\to 0$),
+$\mathcal{L}_\text{cov}\to 0$, and $\mathcal{L}_\text{inv}\to 0$
+simultaneously. This is genuinely deceptive if you only watch
+$\mathcal{L}_\text{total}$ or $\mathcal{L}_\text{inv}$ — both *look* like
+training is succeeding (loss going down) right up until you check
+$\mathcal{L}_\text{var}$ and $\mathcal{L}_\text{cov}$ specifically and see
+they are moving toward their degenerate values instead of away from them.
+This is precisely why VICReg logs three separate components rather than
+just a scalar total — $\mathcal{L}_\text{total}$ alone is not a reliable
+training-health signal.
+
+**Practical rule:** plot $\mathcal{L}_\text{var}$ with a reference line at
+$\gamma$, and watch the trend. Healthy training: flat or decreasing.
+Collapsing: rising toward the $\gamma$ line. Cross-check with
+$\mathcal{L}_\text{cov}$: healthy training keeps it meaningfully nonzero;
+collapse drives it toward exactly $0$.
+
+### The debugging method (systematic elimination, in order)
+
+When training showed $\mathcal{L}_\text{var}$ climbing toward $\gamma$ and
+$\mathcal{L}_\text{cov}\to 0$ within the first epoch, each of the
+following hypotheses was tested as an isolated, falsifiable experiment —
+not argued about abstractly:
+
+1. **Mixed precision (AMP) numerical breakdown** — tested by computing the
+   same covariance matrix in float16 vs float32 directly; found no
+   meaningful precision loss, no inf/NaN. Ruled out.
+2. **Vanishing variance through network depth at initialization** — tested
+   by measuring per-dimension output std of a naive deep ReLU stack
+   (found severe vanishing, std shrinking ~50% per layer) vs the REAL
+   `ViTEncoder` (found healthy std ≈0.15, no vanishing — the residual
+   connections and LayerNorm were doing their job). Ruled out for the
+   real architecture.
+3. **Input scale mismatch (ImageNet-normalized vs unit-variance inputs)**
+   — tested by comparing encoder output std for both input distributions;
+   nearly identical. Ruled out.
+4. **Crop augmentation too aggressive** (`RandomResizedCrop(scale=(0.08,1.0))`)
+   — tested by softening to `scale=(0.5,1.0)`; collapse trajectory was
+   essentially unchanged. Ruled out (or at least, not sufficient alone).
+5. **Learning rate too high** — tested across a 20x range
+   ($3\times10^{-4}$ down to $10^{-5}$) on a deep toy network; ALL learning
+   rates converged to the same collapsed fixed point eventually (just
+   slower at lower lr). This was the key clue that ruled out "just needs
+   tuning" and pointed at something structural in the loss/gradient
+   balance, not the optimizer step size.
+6. **BatchNorm separate-pass vs joint-pass statistics** — tested by
+   concatenating both views into one batch before the projector (so
+   BatchNorm sees joint statistics) vs two independent forward passes;
+   measurably different outputs, but the collapse trajectory was
+   unchanged either way. Ruled out as the primary cause (though the
+   joint-pass version is still architecturally more correct and was kept).
+
+None of these explained it. The actual breakthrough came from comparison
+against an external, verified-working reference implementation
+(a from-scratch CIFAR-10 VICReg blog post with public, runnable code),
+substituting pieces of OUR implementation into THEIR training loop one at
+a time:
+
+- **Our `ViTEncoder` + their loss + their projector** → trained correctly
+  ($\mathcal{L}_\text{var}$ decreasing). Encoder ruled out.
+- **Our `ViTEncoder` + our `Projector` + their loss** → also trained
+  correctly. Our projector ruled out.
+- **Our `ViTEncoder` + our `Projector` + OUR `VICRegLoss`** → collapsed,
+  reproduced in complete isolation, same random seed, same data. **The
+  loss class was the cause.**
+
+Comparing our individual loss functions against the reference's
+function-by-function on identical input pinpointed it exactly:
+`invariance_loss` differed by a factor of exactly $d$ (our projector
+dimension, 512) — `variance_loss` and `covariance_loss` matched the
+reference exactly.
+
+### The actual root cause
+
+Checking the original paper's PDF directly (not a secondary source)
+confirmed the prose equation (Eq. 5) and the released pseudocode
+(Algorithm 1) use different normalizations for the invariance term,
+differing by exactly the factor of $d$ found in the comparison above. Our
+original implementation (built by literally implementing the prose
+equation, and at the time even "fixing" a unit test that disagreed with
+that interpretation) was internally consistent but matched the wrong
+artifact — the formula's literal text, not the actual code that produced
+the calibrated $\lambda=25,\mu=25,\nu=1$ hyperparameters.
+
+**Fix:** `invariance_loss` now calls `torch.nn.functional.mse_loss(z_a, z_b)`
+directly (averages over all $N\times d$ elements via PyTorch's default
+`reduction='mean'`, implemented in a compiled C++/ATen kernel —
+`torch._C._nn.mse_loss` — not visible as explicit Python arithmetic, but
+verified numerically equivalent to `((z_a-z_b)**2).sum(dim=1).mean() / d`).
+
+**Lesson for the lab notebook:** when a paper's prose and its released
+code disagree, the code is ground truth for reproducing published
+results — prose can contain transcription errors, simplifications, or
+inconsistencies that never get caught because reviewers read the
+equations, not the pseudocode line by line. When implementing a method
+from a paper, cross-check the prose against any released pseudocode or
+official repository before trusting either alone.
+
+---

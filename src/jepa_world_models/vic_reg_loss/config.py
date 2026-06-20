@@ -44,11 +44,11 @@ class VICRegConfig:
     # Number of DataLoader worker processes. 0 = load on main process
     # (safe on Windows, which has issues with multiprocessing + CUDA).
     # Increase to 4 on Linux for faster data loading.
-    num_workers: int = 0
+    num_workers: int = 4
 
     # Pin memory for faster CPU->GPU transfers. Only useful with
     # num_workers > 0; set False when num_workers=0.
-    pin_memory: bool = False
+    pin_memory: bool = True
 
     # -------------------------------------------------------------------------
     # Encoder (ViTEncoder)
@@ -107,7 +107,7 @@ class VICRegConfig:
     # Adam with default betas -- standard for transformer pretraining.
     # The original VICReg paper uses LARS optimizer for large batches
     # (4096); Adam is appropriate for our smaller batch sizes.
-    lr: float = 3e-4           # learning rate
+    lr: float = 1e-4           # learning rate
     weight_decay: float = 1e-6 # L2 regularization, light for SSL
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
@@ -143,7 +143,7 @@ class VICRegConfig:
     log_every_n_steps: int = 50
 
     # Save a checkpoint every N epochs.
-    checkpoint_every_n_epochs: int = 10
+    checkpoint_every_n_epochs: int = 5
 
     # Where to save checkpoints and logs.
     checkpoint_dir: str = "checkpoints/vicreg"
