@@ -339,10 +339,22 @@ def train(cfg: VICRegConfig, resume_from: str | None = None) -> None:
             )
             print(f"  New best L_total={best_loss:.4f}, saved: {path}")
 
-    # Always save a final checkpoint at the end of training
-    final_path = save_checkpoint(
-        encoder, projector, optimizer, cfg.epochs - 1, avg["total"],
-        cfg.checkpoint_dir, "final.pt",
-    )
+    # Always save a final checkpoint at the end of training -- guard
+    # against the loop never running (e.g. resuming a checkpoint whose
+    # epoch is already >= cfg.epochs), which would leave `avg` undefined.
+    if "avg" not in locals():
+        print(
+            f"\nWARNING: training loop did not run (start_epoch={start_epoch} "
+            f">= cfg.epochs={cfg.epochs}). Nothing to save as 'final' -- "
+            f"the resumed checkpoint is already the most recent state."
+        )
+    else:
+        final_path = save_checkpoint(
+            encoder, projector, optimizer, cfg.epochs - 1, avg["total"],
+            cfg.checkpoint_dir, "final.pt",
+        )
+        print(f"\nTraining complete. Final checkpoint: {final_path}")
+        print(f"Best checkpoint (L_total={best_loss:.4f}): {cfg.checkpoint_dir}/best.pt")
+        
     print(f"\nTraining complete. Final checkpoint: {final_path}")
     print(f"Best checkpoint (L_total={best_loss:.4f}): {cfg.checkpoint_dir}/best.pt")

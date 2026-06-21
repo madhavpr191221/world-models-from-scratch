@@ -728,3 +728,41 @@ from a paper, cross-check the prose against any released pseudocode or
 official repository before trusting either alone.
 
 ---
+
+## Bug note: resuming past `cfg.epochs` crashes with `UnboundLocalError`
+
+**Symptom:** resuming training from a checkpoint via `--resume` crashed
+immediately, before running a single epoch, with
+`UnboundLocalError: cannot access local variable 'avg' where it is not
+associated with a value`.
+
+**Cause:** `train()`'s main loop is `for epoch in range(start_epoch,
+cfg.epochs):`, and the variable `avg` (the per-epoch loss summary dict)
+is only ever assigned *inside* that loop body. The final "always save a
+checkpoint" call at the end of `train()` references `avg["total"]`
+unconditionally. If `start_epoch >= cfg.epochs` -- e.g. resuming a
+checkpoint saved at epoch 129 while `config.py` had been left at its
+default `epochs=100` (a value that had been overridden to 200
+in-memory for the original run, but never saved back to the file) --
+`range(129, 100)` is empty, the loop body never executes, and `avg` is
+never created. Python then raises `UnboundLocalError` rather than
+`NameError`, specifically because `avg` IS assigned somewhere in the
+function's body (inside the loop), so Python treats it as a local
+variable throughout the function -- it's "unbound" rather than
+"undefined", a subtlety of how Python scoping works (a variable
+assigned anywhere in a function is local to that function for its
+entire body, even before the assignment line executes).
+
+**Fix:** guard the final save with `if "avg" not in locals():` and print
+a clear warning instead of crashing, covering the case where the
+training loop legitimately has nothing left to do.
+
+**Practical lesson:** when overriding a config value for a single run
+(e.g. setting `epochs=200` by editing the dataclass instance in code,
+or intending to but not actually persisting it), remember the override
+does not survive a process restart -- if you need to resume an
+interrupted run, the config file on disk is what determines the new
+process's behavior, not whatever was true of the previous process's
+in-memory state. Persist intentional overrides to the actual config
+file (or pass them via a working `--epochs` CLI flag) rather than
+relying on a one-off in-memory change.
