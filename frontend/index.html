@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Towards World Models: a plain-language project page for self-supervised vision."
+    />
+    <title>Towards World Models</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-home">
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Research project</p>
+          <h1>Towards World Models</h1>
+        </div>
+        <nav aria-label="Primary" class="site-nav">
+          <a href="./index.html" aria-current="page">Home</a>
+          <a href="./method.html">Method</a>
+          <a href="./results.html">Results</a>
+          <a href="./demo.html">Demo</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="panel section-block">
+          <p class="eyebrow">Overview</p>
+          <h2>What this page is for</h2>
+          <p class="section-lede">
+            This project looks at a self-supervised vision model. The site shows
+            what the model is, how it is checked, and how it behaves on image
+            retrieval.
+          </p>
+          <ol class="number-list">
+            <li>Train a vision encoder with unlabeled images.</li>
+            <li>Freeze the encoder and probe the features.</li>
+            <li>Use retrieval to see which images end up near each other.</li>
+          </ol>
+        </section>
+
+        <section class="grid section-cards" aria-label="Project summary">
+          <article class="panel info-card">
+            <p class="eyebrow">Method</p>
+            <h3>Probe frozen features.</h3>
+            <p>Check what the representation already contains.</p>
+          </article>
+          <article class="panel info-card">
+            <p class="eyebrow">Results</p>
+            <h3>Read the measurements.</h3>
+            <p>Look at linear probe, low-shot, and k-NN.</p>
+          </article>
+          <article class="panel info-card">
+            <p class="eyebrow">Demo</p>
+            <h3>Upload an image.</h3>
+            <p>See nearby images from the learned space.</p>
+          </article>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Method page for Towards World Models." />
+    <title>Towards World Models | Method</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-method">
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Research project</p>
+          <h1>Towards World Models</h1>
+        </div>
+        <nav aria-label="Primary" class="site-nav">
+          <a href="./index.html">Home</a>
+          <a href="./method.html" aria-current="page">Method</a>
+          <a href="./results.html">Results</a>
+          <a href="./demo.html">Demo</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="panel section-block">
+          <p class="eyebrow">Method</p>
+          <h2>What happens here</h2>
+          <ol class="number-list">
+            <li>Take unlabeled STL-10 images.</li>
+            <li>Train a vision encoder with VICReg.</li>
+            <li>Freeze the encoder.</li>
+            <li>Extract features from the labeled split.</li>
+            <li>Fit a simple linear classifier on top of those features.</li>
+          </ol>
+        </section>
+
+        <section class="panel section-block">
+          <p class="eyebrow">Why this test</p>
+          <h2>Why the probe is useful</h2>
+          <ul class="bullet-list">
+            <li>If the features are useful, a simple classifier should work.</li>
+            <li>If the features are weak, the classifier cannot recover much.</li>
+            <li>Keeping the encoder frozen makes the test easier to read.</li>
+          </ul>
+        </section>
+
+        <section class="panel section-block">
+          <p class="eyebrow">Flow</p>
+          <h2>Simple view of the pipeline</h2>
+          <div class="mini-diagram" aria-label="Pipeline sketch">
+            <div class="node">Image</div>
+            <div class="arrow">→</div>
+            <div class="node">Encoder</div>
+            <div class="arrow">→</div>
+            <div class="node">Feature</div>
+            <div class="arrow">→</div>
+            <div class="node">Probe / Retrieval</div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

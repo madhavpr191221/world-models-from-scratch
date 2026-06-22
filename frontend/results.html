@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Results page for Towards World Models." />
+    <title>Towards World Models | Results</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-results">
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Research project</p>
+          <h1>Towards World Models</h1>
+        </div>
+        <nav aria-label="Primary" class="site-nav">
+          <a href="./index.html">Home</a>
+          <a href="./method.html">Method</a>
+          <a href="./results.html" aria-current="page">Results</a>
+          <a href="./demo.html">Demo</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="panel section-block">
+          <p class="eyebrow">Results</p>
+          <h2>What to look at</h2>
+          <p class="section-lede">
+            The main point is whether the learned features can be read out and
+            whether nearby images look related.
+          </p>
+          <ol class="number-list">
+            <li>Linear probe: checks if class labels are readable from features.</li>
+            <li>Low-shot probe: checks what happens with less labeled data.</li>
+            <li>k-NN: checks if nearby embeddings often share a label.</li>
+            <li>Projector comparison: checks whether the projector behaves the same way as the encoder.</li>
+          </ol>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

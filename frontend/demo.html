@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Retrieval demo page for Towards World Models." />
+    <title>Towards World Models | Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-demo">
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Research project</p>
+          <h1>Towards World Models</h1>
+        </div>
+        <nav aria-label="Primary" class="site-nav">
+          <a href="./index.html">Home</a>
+          <a href="./method.html">Method</a>
+          <a href="./results.html">Results</a>
+          <a href="./demo.html" aria-current="page">Demo</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="panel section-block">
+          <p class="eyebrow">Demo</p>
+          <h2>Upload an image</h2>
+          <p class="section-lede">
+            The query image can be any local still image. The backend resizes it to
+            96 x 96, runs the encoder, and returns nearby images from the downloaded
+            retrieval corpus.
+          </p>
+
+          <div class="demo-preview">
+            <div class="upload-card">
+              <p class="upload-title">Choose an image</p>
+              <label class="upload-zone" for="image-input" id="dropzone">
+                <span id="upload-copy">Click here or drop an image</span>
+                <input id="image-input" class="file-input" type="file" accept="image/*" />
+              </label>
+              <p class="result-note" id="file-status">No image selected yet.</p>
+              <p class="result-note" id="request-status">Waiting for upload.</p>
+            </div>
+
+            <div class="neighbors-card">
+              <p class="upload-title">Query preview</p>
+              <div class="query-preview" id="query-preview">
+                <span id="preview-copy">The selected image will appear here.</span>
+                <img id="preview-image" alt="" hidden />
+              </div>
+            </div>
+          </div>
+
+          <div class="results-panel">
+            <div class="section-heading">
+              <p class="eyebrow">Nearest neighbors</p>
+              <h3>Returned by the retrieval backend</h3>
+            </div>
+            <div class="loading-state" id="loading-state" hidden>
+              <span class="spinner" aria-hidden="true"></span>
+              <span>Finding neighbors...</span>
+            </div>
+            <div class="neighbor-results" id="neighbor-results">
+              <p class="result-note">No results yet.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>
