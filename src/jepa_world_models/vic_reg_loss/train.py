@@ -1,4 +1,5 @@
 import csv
+from dataclasses import asdict
 from pathlib import Path
 
 import torch
@@ -230,6 +231,7 @@ def save_checkpoint(
     avg_loss: float,
     checkpoint_dir: str,
     filename: str,
+    cfg: VICRegConfig | None = None,
 ) -> str:
     """
     Saves a full training checkpoint: encoder weights, projector weights,
@@ -248,9 +250,32 @@ def save_checkpoint(
         "projector_state_dict": projector.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "avg_loss": avg_loss,
+        "config": asdict(cfg) if cfg is not None else None,
     }, full_path)
 
     return str(full_path)
+
+
+def load_model_from_checkpoint(
+    checkpoint_file: str,
+    device: str | None = None,
+) -> tuple[VICRegConfig, ViTEncoder, Projector, dict]:
+    """
+    Load encoder and projector weights from a checkpoint, reconstructing the
+    exact model configuration when it is stored in the checkpoint.
+    """
+    checkpoint = torch.load(checkpoint_file, map_location=device or "cpu")
+    cfg_data = checkpoint.get("config")
+    cfg = VICRegConfig(**cfg_data) if cfg_data is not None else VICRegConfig()
+    if device is not None:
+        cfg.device = device
+
+    encoder, projector = build_model(cfg)
+    encoder.load_state_dict(checkpoint["encoder_state_dict"])
+    projector.load_state_dict(checkpoint["projector_state_dict"])
+    encoder.eval()
+    projector.eval()
+    return cfg, encoder, projector, checkpoint
 
 
 def load_checkpoint(
@@ -326,7 +351,7 @@ def train(cfg: VICRegConfig, resume_from: str | None = None) -> None:
         if (epoch + 1) % cfg.checkpoint_every_n_epochs == 0:
             path = save_checkpoint(
                 encoder, projector, optimizer, epoch, avg["total"],
-                cfg.checkpoint_dir, f"epoch_{epoch + 1:04d}.pt",
+                cfg.checkpoint_dir, f"epoch_{epoch + 1:04d}.pt", cfg=cfg,
             )
             print(f"  Saved periodic checkpoint: {path}")
 
@@ -335,7 +360,7 @@ def train(cfg: VICRegConfig, resume_from: str | None = None) -> None:
             best_loss = avg["total"]
             path = save_checkpoint(
                 encoder, projector, optimizer, epoch, avg["total"],
-                cfg.checkpoint_dir, "best.pt",
+                cfg.checkpoint_dir, "best.pt", cfg=cfg,
             )
             print(f"  New best L_total={best_loss:.4f}, saved: {path}")
 
@@ -351,10 +376,7 @@ def train(cfg: VICRegConfig, resume_from: str | None = None) -> None:
     else:
         final_path = save_checkpoint(
             encoder, projector, optimizer, cfg.epochs - 1, avg["total"],
-            cfg.checkpoint_dir, "final.pt",
+            cfg.checkpoint_dir, "final.pt", cfg=cfg,
         )
         print(f"\nTraining complete. Final checkpoint: {final_path}")
         print(f"Best checkpoint (L_total={best_loss:.4f}): {cfg.checkpoint_dir}/best.pt")
-        
-    print(f"\nTraining complete. Final checkpoint: {final_path}")
-    print(f"Best checkpoint (L_total={best_loss:.4f}): {cfg.checkpoint_dir}/best.pt")

@@ -129,7 +129,7 @@ class VICRegConfig:
     # Number of pretraining epochs. SSL methods typically need 100-400
     # epochs to converge; 100 is a reasonable starting point for STL-10
     # at our model scale.
-    epochs: int = 200
+    epochs: int = 100
 
     # Device: "cuda" if available, else "cpu". Set explicitly here so
     # train.py doesn't silently fall back to CPU without warning.

@@ -98,7 +98,11 @@ class ViTEncoder(torch.nn.Module):
         # Step 5: final LayerNorm (applied before pooling)
         self.norm = torch.nn.LayerNorm(embed_dim)
 
-    def forward(self, images: Tensor) -> Tensor:
+    def forward(
+        self,
+        images: Tensor,
+        return_hidden_states: bool = False,
+    ) -> Tensor | tuple[Tensor, list[Tensor]]:
         # Step 1: patchify -- (B, 3, H, W) -> (B, num_patches, patch_dim)
         x = patchify(images, self.patch_size)
 
@@ -108,9 +112,13 @@ class ViTEncoder(torch.nn.Module):
         # Step 3: add positional embedding -- (B, num_patches, d) -> (B, num_patches, d)
         x = self.pos_embed(x)
 
+        hidden_states: list[Tensor] = []
+
         # Step 4: N transformer blocks -- shape preserved throughout
         for block in self.blocks:
             x = block(x)
+            if return_hidden_states:
+                hidden_states.append(x)
 
         # Step 5: final LayerNorm
         x = self.norm(x)
@@ -118,4 +126,6 @@ class ViTEncoder(torch.nn.Module):
         # Step 6: mean pool over patch dimension -- (B, num_patches, d) -> (B, d)
         x = x.mean(dim=1)
 
+        if return_hidden_states:
+            return x, hidden_states
         return x
