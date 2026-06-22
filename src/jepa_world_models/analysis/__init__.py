@@ -18,6 +18,12 @@ from jepa_world_models.analysis.probing import (
     train_linear_probe,
     train_probe_on_subset,
 )
+from jepa_world_models.analysis.video_probing import (
+    DirectionFeatureSplit,
+    TemporalDirectionResult,
+    build_direction_feature_split,
+    run_temporal_direction_probe,
+)
 from jepa_world_models.analysis.retrieval import (
     RetrievalIndex,
     build_gradio_app,
@@ -27,4 +33,3 @@ from jepa_world_models.analysis.retrieval import (
     query_neighbors,
     save_retrieval_index,
 )
-
