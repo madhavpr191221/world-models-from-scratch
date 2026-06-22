@@ -19,24 +19,80 @@ flowchart LR
     B --> C1[Augmentation view A]
     B --> C2[Augmentation view B]
 
-    C1 --> D1[ViTEncoder]
-    C2 --> D2[ViTEncoder]
+    C1 --> D[Shared ViTEncoder]
+    C2 --> D
 
-    D1 --> E1[Projector]
-    D2 --> E2[Projector]
+    D --> E[Projector head]
 
-    E1 --> F[VICReg loss]
-    E2 --> F
-
+    E --> F[VICReg loss]
     F --> G[Backward pass]
     G --> H[Adam optimizer]
-    H --> D1
-    H --> D2
+
+    H -. updates weights .-> D
+    H -. updates weights .-> E
 
     F --> I[CSV loss log]
     F --> J[Checkpoints]
     F --> K[Collapse diagnostics]
 ```
+
+### Optimization Path
+
+This separate diagram shows only the weight-update part. It is split out so the main flow stays easy to read.
+
+```mermaid
+flowchart LR
+    F[VICReg loss] --> G[Backward pass]
+    G --> H[Adam optimizer]
+    H -. updates weights .-> D[Shared ViTEncoder]
+    H -. updates weights .-> E[Projector head]
+```
+
+### How To Read The Diagram
+
+The diagram is showing one training loop.
+
+1. Start with unlabeled STL-10 images.
+2. The dataset creates two different augmented views of the same image.
+3. Both views go through the same encoder and projector.
+4. The VICReg loss compares the two projected outputs.
+5. The backward pass updates the encoder and projector through the optimizer.
+6. The loop repeats for the next batch.
+
+The circles and return arrows are there because this is not a one-way pipeline.
+It is a training loop:
+
+- forward pass
+- loss computation
+- backward pass
+- optimizer update
+- next batch
+
+The arrows going back to `ViTEncoder` are not data flowing backward.
+They mean the encoder weights are updated during training.
+
+### Purpose Of Each Neural Network
+
+This project has two neural networks in the main training path.
+
+1. `ViTEncoder`
+   - Input: one image view
+   - Output: a feature vector
+   - Purpose: learn the main representation of the image
+   - Why it matters: this is the part you want to keep and reuse later for probing, retrieval, and downstream tasks
+
+2. `Projector`
+   - Input: encoder features
+   - Output: projected features used by the VICReg loss
+   - Purpose: give the loss its own space to work in
+   - Why it matters: the projector helps training without forcing the encoder representation itself to become too specialized to the loss
+
+Important:
+
+- the encoder is the part we care about most after training
+- the projector is mainly a training helper
+- the optimizer updates both during training
+- later, for probing or retrieval, we usually freeze the encoder and ignore the projector
 
 ## Solution Architecture
 
