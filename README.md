@@ -119,3 +119,36 @@ The plan is not to jump straight to a full world model. The next steps are:
    modeling
 
 That direction is documented in [docs/plans/video_plan.md](docs/plans/video_plan.md).
+# JEPA World Models
+
+This repo currently contains:
+
+- a VICReg-style self-supervised image encoder
+- probing and retrieval utilities for STL-10
+- a frontend for image retrieval
+- a video latent-dynamics demo
+- a temporal probing plan for video
+
+## Video Temporal Probe
+
+The video path is now focused on a simple temporal diagnostic:
+
+- sample 32 frames from a short clip
+- encode frames with the frozen VICReg ViT
+- keep frame order
+- train a small classifier to predict forward vs reversed
+
+The goal is not full video action recognition.
+It is to test whether the frozen representation keeps temporal order.
+
+### Planned/available scripts
+
+- `scripts/run_video_temporal_probe.py`
+- `scripts/run_video_dynamics.py`
+- `scripts/serve_video_demo.py`
+
+### Planned docs
+
+- `docs/video/video_plan.md`
+- `docs/video/video_classification_thing.md`
+- `docs/video/frontend_implementation_plan.md`
