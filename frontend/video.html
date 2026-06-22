@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Latent Dynamics</title>
+    <link rel="stylesheet" href="/video.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Video</p>
+          <h1>Video Latent Dynamics</h1>
+          <p class="lede">
+            This page shows a frozen video encoder, a moving latent point, and
+            the nearest clips for each moment in time.
+          </p>
+        </div>
+        <nav class="nav">
+          <a href="/index.html">Home</a>
+          <a href="/method.html">Method</a>
+          <a href="/results.html">Results</a>
+          <a href="/video.html" class="active">Video</a>
+        </nav>
+      </header>
+
+      <section class="panel controls">
+        <div class="control-group">
+          <label for="exampleSelect">Example clip</label>
+          <select id="exampleSelect"></select>
+        </div>
+        <div class="control-group actions">
+          <button id="loadButton" type="button">Load clip</button>
+          <button id="playButton" type="button">Play</button>
+          <button id="stepBackButton" type="button">-1 frame</button>
+          <button id="stepForwardButton" type="button">+1 frame</button>
+        </div>
+        <div class="control-group actions">
+          <button id="compareButton" type="button" class="toggle-button">Compare forward / reversed</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel video-panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Current clip</p>
+              <h2 id="clipTitle">Loading...</h2>
+            </div>
+            <div class="meta">
+              <span id="clipLabel"></span>
+              <span id="clipFrames"></span>
+            </div>
+          </div>
+          <video id="videoPlayer" controls playsinline></video>
+          <input id="frameSlider" type="range" min="0" max="0" value="0" step="1" />
+          <div class="caption-row">
+            <span id="frameLabel">Frame 0</span>
+            <span id="motionLabel">Frozen latent space</span>
+          </div>
+        </article>
+
+        <article class="panel trajectory-panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Latent trail</p>
+              <h2>Frame embedding trail</h2>
+            </div>
+          </div>
+          <svg id="trajectorySvg" viewBox="0 0 100 100" aria-label="Latent trajectory plot"></svg>
+        </article>
+      </section>
+
+      <section id="compareSection" class="compare-section hidden">
+        <div class="compare-intro">
+          <p class="label">Temporal check</p>
+          <h2>Does reversing the clip change the embedding trail?</h2>
+          <p>
+            If the model keeps track of order, the forward and reversed clips
+            should not look the same in latent space.
+          </p>
+          <div class="compare-legend">
+            <span><span class="legend-swatch forward"></span>Forward</span>
+            <span><span class="legend-swatch reverse"></span>Reversed</span>
+          </div>
+        </div>
+        <article class="panel compare-panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Forward</p>
+              <h2>Original order</h2>
+            </div>
+            <div class="meta">
+              <span id="forwardMeta"></span>
+            </div>
+          </div>
+          <svg id="forwardSvg" viewBox="0 0 100 100" aria-label="Forward embedding trail"></svg>
+        </article>
+        <article class="panel compare-panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Reversed</p>
+              <h2>Frames in reverse</h2>
+            </div>
+            <div class="meta">
+              <span id="reverseMeta"></span>
+            </div>
+          </div>
+          <svg id="reverseSvg" viewBox="0 0 100 100" aria-label="Reversed embedding trail"></svg>
+        </article>
+      </section>
+
+      <section class="panel neighbors-panel">
+        <div class="panel-header">
+          <div>
+            <p class="label">Nearest neighbors</p>
+            <h2>Returned by the retrieval backend</h2>
+          </div>
+        </div>
+        <div id="neighborStatus" class="status">Loading neighbors...</div>
+        <div id="neighborList" class="neighbor-list"></div>
+      </section>
+
+      <section class="panel explanation-panel">
+        <p class="label">What to notice</p>
+        <p id="explanationText">
+          The point should move as the clip changes. Similar motion should stay
+          nearby in the latent space.
+        </p>
+      </section>
+    </main>
+
+    <script src="/video.js"></script>
+  </body>
+</html>
