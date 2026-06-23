@@ -22,8 +22,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="logs/video_temporal_probe",
+        default="logs/video_temporal_probe/temporal_conv",
         help="Directory for probe checkpoints and reports.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default="logs/video_temporal_probe/cache",
+        help="Directory for cached source embeddings.",
     )
     parser.add_argument(
         "--output",
@@ -48,6 +54,7 @@ def main() -> None:
         lr=args.lr,
         seed=args.seed,
         output_dir=args.output_dir,
+        cache_dir=args.cache_dir,
     )
 
     output = Path(args.output)
@@ -60,6 +67,7 @@ def main() -> None:
     print(f"test_accuracy={result.test_accuracy:.4f}")
     print(f"feature_shape={result.feature_shape}")
     print(f"best_checkpoint={result.checkpoint_path}")
+    print(f"model_dir={result.model_dir}")
 
 
 if __name__ == "__main__":

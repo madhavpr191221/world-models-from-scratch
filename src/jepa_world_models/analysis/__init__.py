@@ -37,6 +37,6 @@ from jepa_world_models.analysis.video_temporal_probe import (
     TemporalProbeResult,
     build_temporal_probe_sources,
     expand_forward_reverse_samples,
-    extract_clip_features,
+    extract_source_clip_features,
     train_forward_reverse_probe,
 )
