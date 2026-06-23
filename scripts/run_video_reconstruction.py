@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 
 from jepa_world_models.analysis.video_reconstruction import (
+    build_reconstruction_head,
     build_tubelet_bank,
     load_clip_from_video_path,
+    reconstruct_clip_with_decoder,
     reconstruct_clip_with_bank,
     save_reconstruction_artifacts,
 )
@@ -24,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-frames", type=int, default=16)
     parser.add_argument("--mask-ratio", type=float, default=0.5)
     parser.add_argument("--mask-mode", type=str, default="middle", choices=["middle", "random"])
+    parser.add_argument("--reconstruction-mode", type=str, default="decoder", choices=["decoder", "retrieval"])
     parser.add_argument("--video-path", type=str, default=None)
     parser.add_argument("--video-index", type=int, default=0)
     parser.add_argument("--cache-dir", type=str, default="logs/video_reconstruction/cache")
@@ -37,16 +40,30 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    bank = build_tubelet_bank(
-        checkpoint_path=args.checkpoint,
-        data_root=args.data_root,
-        source_split=args.source_split,
-        subset_size=args.subset_size,
-        image_size=args.image_size,
-        num_frames=args.num_frames,
-        batch_size=args.bank_batch_size,
-        cache_dir=args.cache_dir,
-    )
+    bank = None
+    head = None
+    if args.reconstruction_mode == "retrieval":
+        bank = build_tubelet_bank(
+            checkpoint_path=args.checkpoint,
+            data_root=args.data_root,
+            source_split=args.source_split,
+            subset_size=args.subset_size,
+            image_size=args.image_size,
+            num_frames=args.num_frames,
+            batch_size=args.bank_batch_size,
+            cache_dir=args.cache_dir,
+        )
+    else:
+        head, head_bundle = build_reconstruction_head(
+            checkpoint_path=args.checkpoint,
+            data_root=args.data_root,
+            source_split=args.source_split,
+            subset_size=args.subset_size,
+            image_size=args.image_size,
+            num_frames=args.num_frames,
+            batch_size=args.bank_batch_size,
+            cache_dir=args.cache_dir,
+        )
 
     if args.video_path:
         clip = load_clip_from_video_path(args.video_path, num_frames=args.num_frames, image_size=args.image_size)
@@ -65,14 +82,24 @@ def main() -> None:
         clip = sample["clip"]
         source_name = sample["video_id"]
 
-    result = reconstruct_clip_with_bank(
-        checkpoint_path=args.checkpoint,
-        bank=bank,
-        clip=clip,
-        mask_ratio=args.mask_ratio,
-        mask_mode=args.mask_mode,
-        seed=args.seed,
-    )
+    if args.reconstruction_mode == "retrieval":
+        result = reconstruct_clip_with_bank(
+            checkpoint_path=args.checkpoint,
+            bank=bank,
+            clip=clip,
+            mask_ratio=args.mask_ratio,
+            mask_mode=args.mask_mode,
+            seed=args.seed,
+        )
+    else:
+        result = reconstruct_clip_with_decoder(
+            checkpoint_path=args.checkpoint,
+            head=head,
+            clip=clip,
+            mask_ratio=args.mask_ratio,
+            mask_mode=args.mask_mode,
+            seed=args.seed,
+        )
     run_dir = output_dir / f"{source_name}_{args.mask_mode}_{int(args.mask_ratio * 100)}"
     payload = save_reconstruction_artifacts(result, run_dir)
     payload.update(
@@ -80,8 +107,13 @@ def main() -> None:
             "source_name": source_name,
             "mask_ratio": args.mask_ratio,
             "mask_mode": args.mask_mode,
+            "reconstruction_mode": args.reconstruction_mode,
         }
     )
+    if head is not None:
+        payload["head_checkpoint"] = head_bundle.checkpoint_path
+        payload["head_train_loss"] = head_bundle.train_loss
+        payload["head_val_loss"] = head_bundle.val_loss
     (run_dir / "result.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"Wrote reconstruction artifacts to {run_dir}")
     print(f"original_video={payload['original_video']}")

@@ -10,6 +10,7 @@ const reconstructedVideo = document.getElementById("reconstructed-video");
 const originalSheet = document.getElementById("original-sheet");
 const maskedSheet = document.getElementById("masked-sheet");
 const reconstructedSheet = document.getElementById("reconstructed-sheet");
+const maskSheet = document.getElementById("mask-sheet");
 const originalDownload = document.getElementById("original-download");
 const maskedDownload = document.getElementById("masked-download");
 const reconstructedDownload = document.getElementById("reconstructed-download");
@@ -50,10 +51,12 @@ runBtn.addEventListener("click", async () => {
     setMedia(originalVideo, originalSheet, data.artifacts.original_gif, data.artifacts.original_sheet);
     setMedia(maskedVideo, maskedSheet, data.artifacts.masked_gif, data.artifacts.masked_sheet);
     setMedia(reconstructedVideo, reconstructedSheet, data.artifacts.reconstructed_gif, data.artifacts.reconstructed_sheet);
+    maskSheet.src = data.artifacts.mask_sheet;
     originalDownload.href = data.artifacts.original_video;
     maskedDownload.href = data.artifacts.masked_video;
     reconstructedDownload.href = data.artifacts.reconstructed_video;
-    setStatus(`Done. Run ${data.run_id} saved.`);
+    const extra = data.metrics?.reconstruction_loss != null ? ` Reconstruction loss ${Number(data.metrics.reconstruction_loss).toFixed(4)}.` : "";
+    setStatus(`Done. Run ${data.run_id} saved.${extra}`);
   } catch (err) {
     setStatus(`Reconstruction failed: ${err.message}`);
   } finally {

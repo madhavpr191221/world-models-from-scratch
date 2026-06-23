@@ -14,13 +14,14 @@ The goal is a visible, explainable artifact that makes the model’s behavior ea
 
 ## Reconstruction Strategy
 
-This first version uses a tubelet bank:
+This first version uses the VideoMAE decoder as the main path:
 
 - encode a pool of training clips with the pretrained VideoMAE encoder
-- store token embeddings and the corresponding raw tubelets
-- reconstruct masked tokens by retrieving the nearest raw tubelet from the bank
+- run the decoder on masked clips to produce token-level predictions
+- fit a small tubelet decoder head that maps decoded tokens back to tubelet pixels
+- copy visible tubelets from the input clip and fill masked tubelets from the head output
 
-This is a practical way to turn the current representation model into a visible reconstruction demo.
+The older tubelet-bank retrieval path stays available as a fallback/debug mode, but the default demo should show the decoder output.
 
 ## Frontend Flow
 
@@ -32,23 +33,24 @@ This is a practical way to turn the current representation model into a visible 
   - masked video
   - reconstructed video
   - frame-strip previews
+  - a mask map showing which tubelets were hidden
 
 ## Entry Points
 
 - CLI demo:
-  - `uv run python scripts/run_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt`
+  - `uv run python scripts/run_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt --reconstruction-mode decoder`
 - Local UI server:
-  - `uv run python scripts/serve_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt`
+  - `uv run python scripts/serve_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt --reconstruction-mode decoder`
 
 ## Test Plan
 
 - upload a known short clip
 - confirm the masked region is visible
 - confirm the reconstructed output is written and playable
-- confirm the frontend renders the three video panes
+- confirm the frontend renders the three video panes and the mask map
 
 ## Assumptions
 
 - reconstruction means masked reconstruction, not free-form generation
-- the first demo is retrieval-assisted and frontend-visible
+- the first demo is decoder-first and frontend-visible
 - a separate browser-based UI is worth it because this is the first time the model will produce an obviously visual output
