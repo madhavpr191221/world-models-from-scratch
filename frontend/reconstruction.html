@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Reconstruction</title>
+    <link rel="stylesheet" href="/reconstruction.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div class="eyebrow">VideoMAE reconstruction</div>
+        <h1>Masked video reconstruction</h1>
+        <p>Upload a short clip, hide part of it, and see how the model fills the missing segment back in.</p>
+      </header>
+
+      <section class="panel controls">
+        <label class="field">
+          <span>Video file</span>
+          <input id="video-file" type="file" accept="video/*" />
+        </label>
+
+        <label class="field">
+          <span>Mask ratio</span>
+          <input id="mask-ratio" type="range" min="0.1" max="0.9" step="0.05" value="0.5" />
+          <output id="mask-ratio-value">50%</output>
+        </label>
+
+        <label class="field">
+          <span>Mask mode</span>
+          <select id="mask-mode">
+            <option value="middle">Middle block</option>
+            <option value="random">Random tubelets</option>
+          </select>
+        </label>
+
+        <button id="run-btn">Reconstruct</button>
+      </section>
+
+      <section class="panel status">
+        <strong>Status</strong>
+        <p id="status-text">Waiting for a video.</p>
+      </section>
+
+      <section class="results">
+        <article class="panel result-card">
+          <h2>Original</h2>
+          <img id="original-video" alt="Original animation" />
+          <img id="original-sheet" alt="Original frame strip" />
+          <a id="original-download" href="#" download>Download MP4</a>
+        </article>
+        <article class="panel result-card">
+          <h2>Masked</h2>
+          <img id="masked-video" alt="Masked animation" />
+          <img id="masked-sheet" alt="Masked frame strip" />
+          <a id="masked-download" href="#" download>Download MP4</a>
+        </article>
+        <article class="panel result-card">
+          <h2>Reconstructed</h2>
+          <img id="reconstructed-video" alt="Reconstructed animation" />
+          <img id="reconstructed-sheet" alt="Reconstructed frame strip" />
+          <a id="reconstructed-download" href="#" download>Download MP4</a>
+        </article>
+      </section>
+    </main>
+    <script src="/reconstruction.js"></script>
+  </body>
+</html>

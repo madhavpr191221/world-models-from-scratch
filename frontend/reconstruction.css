@@ -1,0 +1,151 @@
+:root {
+  --bg: #f4efe6;
+  --panel: rgba(255, 255, 255, 0.78);
+  --border: rgba(82, 53, 30, 0.16);
+  --text: #241912;
+  --muted: #67564a;
+  --accent: #d74f1f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, rgba(255, 231, 191, 0.7), transparent 34%),
+    linear-gradient(180deg, #fff8ef 0%, var(--bg) 100%);
+}
+
+.page {
+  width: min(1200px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 32px 0 56px;
+}
+
+.hero {
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+h1, h2 {
+  margin: 0;
+  line-height: 1.05;
+}
+
+h1 {
+  font-size: clamp(2.4rem, 5vw, 4.5rem);
+  margin-top: 8px;
+}
+
+.hero p {
+  max-width: 64ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 34px rgba(66, 37, 14, 0.08);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr auto;
+  gap: 16px;
+  padding: 18px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.field span {
+  color: var(--muted);
+}
+
+input[type="file"],
+select,
+button {
+  font: inherit;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+button {
+  border: 0;
+  background: var(--accent);
+  color: white;
+  padding: 12px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.status {
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.status p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.result-card {
+  padding: 16px;
+}
+
+.result-card video,
+.result-card img {
+  width: 100%;
+  display: block;
+  border-radius: 14px;
+  background: #111;
+  margin-top: 14px;
+}
+
+.result-card video,
+.result-card img {
+  aspect-ratio: 16 / 9;
+}
+
+.result-card a {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+@media (max-width: 960px) {
+  .controls,
+  .results {
+    grid-template-columns: 1fr;
+  }
+}
