@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+import hashlib
 import json
 import math
 import uuid
@@ -75,6 +76,9 @@ class TubeletDecoderHeadBundle:
     embed_dim: int
     tubelet_dim: int
     hidden_dim: int
+    num_blocks: int
+    dropout: float
+    architecture_version: int
     patch_size: int
     tubelet_size: int
     image_size: int
@@ -84,6 +88,7 @@ class TubeletDecoderHeadBundle:
     mask_ratio: float
     train_loss: float | None = None
     val_loss: float | None = None
+    best_epoch: int | None = None
 
     def to_payload(self) -> dict:
         return {
@@ -91,6 +96,9 @@ class TubeletDecoderHeadBundle:
             "embed_dim": self.embed_dim,
             "tubelet_dim": self.tubelet_dim,
             "hidden_dim": self.hidden_dim,
+            "num_blocks": self.num_blocks,
+            "dropout": self.dropout,
+            "architecture_version": self.architecture_version,
             "patch_size": self.patch_size,
             "tubelet_size": self.tubelet_size,
             "image_size": self.image_size,
@@ -100,6 +108,7 @@ class TubeletDecoderHeadBundle:
             "mask_ratio": self.mask_ratio,
             "train_loss": self.train_loss,
             "val_loss": self.val_loss,
+            "best_epoch": self.best_epoch,
         }
 
     @classmethod
@@ -109,6 +118,9 @@ class TubeletDecoderHeadBundle:
             embed_dim=int(payload["embed_dim"]),
             tubelet_dim=int(payload["tubelet_dim"]),
             hidden_dim=int(payload["hidden_dim"]),
+            num_blocks=int(payload.get("num_blocks", 0)),
+            dropout=float(payload.get("dropout", 0.0)),
+            architecture_version=int(payload.get("architecture_version", 1)),
             patch_size=int(payload["patch_size"]),
             tubelet_size=int(payload["tubelet_size"]),
             image_size=int(payload["image_size"]),
@@ -118,25 +130,58 @@ class TubeletDecoderHeadBundle:
             mask_ratio=float(payload["mask_ratio"]),
             train_loss=None if payload.get("train_loss") is None else float(payload["train_loss"]),
             val_loss=None if payload.get("val_loss") is None else float(payload["val_loss"]),
+            best_epoch=None if payload.get("best_epoch") is None else int(payload["best_epoch"]),
         )
 
 
-class TubeletDecoderHead(nn.Module):
-    def __init__(self, embed_dim: int, tubelet_dim: int, hidden_dim: int | None = None) -> None:
+class ResidualMLPBlock(nn.Module):
+    def __init__(self, hidden_dim: int, dropout: float) -> None:
         super().__init__()
-        hidden_dim = hidden_dim or max(embed_dim * 2, tubelet_dim // 2)
+        expansion_dim = hidden_dim * 2
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_dim, expansion_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(expansion_dim, hidden_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.mlp(self.norm(x))
+
+
+class TubeletDecoderHead(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        tubelet_dim: int,
+        hidden_dim: int | None = None,
+        num_blocks: int = 2,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        hidden_dim = hidden_dim or max(embed_dim * 4, 512)
         self.embed_dim = embed_dim
         self.tubelet_dim = tubelet_dim
         self.hidden_dim = hidden_dim
-        self.net = nn.Sequential(
+        self.num_blocks = num_blocks
+        self.dropout = dropout
+        self.input = nn.Sequential(
             nn.LayerNorm(embed_dim),
             nn.Linear(embed_dim, hidden_dim),
             nn.GELU(),
+        )
+        self.blocks = nn.Sequential(
+            *(ResidualMLPBlock(hidden_dim, dropout) for _ in range(num_blocks))
+        )
+        self.output = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, tubelet_dim),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        return self.output(self.blocks(self.input(x)))
 
 
 def _normalize_clip(clip: torch.Tensor) -> torch.Tensor:
@@ -236,6 +281,33 @@ def _flat_to_tubelets(
     if flat.shape[1] != expected:
         raise ValueError(f"Expected feature dimension {expected}, got {flat.shape[1]}.")
     return flat.view(flat.shape[0], tubelet_size, 3, patch_size, patch_size)
+
+
+def masked_reconstruction_metrics(
+    predicted_tubelets: torch.Tensor,
+    target_tubelets: torch.Tensor,
+    mask: torch.Tensor,
+) -> dict[str, float]:
+    """Measure reconstruction only where the input was hidden."""
+    mask = mask.cpu()
+    if not mask.any():
+        return {
+            "reconstruction_loss": 0.0,
+            "masked_pixel_mse": 0.0,
+            "psnr_db": float("inf"),
+        }
+    masked_pred = predicted_tubelets[mask]
+    masked_target = target_tubelets[mask]
+    normalized_mse = float(F.mse_loss(masked_pred, masked_target).item())
+    pred_pixels = _denormalize_clip(masked_pred.flatten(0, 1)).clamp(0.0, 1.0)
+    target_pixels = _denormalize_clip(masked_target.flatten(0, 1)).clamp(0.0, 1.0)
+    pixel_mse = float(F.mse_loss(pred_pixels, target_pixels).item())
+    psnr_db = float("inf") if pixel_mse == 0.0 else 10.0 * math.log10(1.0 / pixel_mse)
+    return {
+        "reconstruction_loss": normalized_mse,
+        "masked_pixel_mse": pixel_mse,
+        "psnr_db": psnr_db,
+    }
 
 
 def unpatchify_tubelets(
@@ -522,35 +594,40 @@ def _fit_head_epoch(
     with context:
         for batch_idx, batch in enumerate(tqdm(loader, desc="decoder head train" if train else "decoder head val", leave=False)):
             clips = batch["clip"].to(device)
-            for sample_idx in range(clips.shape[0]):
-                clip = clips[sample_idx : sample_idx + 1]
-                recon_tokens, mask = reconstruct_tokens(
-                    model,
-                    clip,
-                    mask_ratio=mask_ratio,
-                    mask_mode=mask_mode,
-                    seed=seed_offset + batch_idx * 1000 + sample_idx,
-                )
-                tubelets, _ = patchify_clip(
-                    clip[0].detach().cpu(),
-                    patch_size=patch_size,
-                    tubelet_size=tubelet_size,
-                )
-                target = tubelets.reshape(tubelets.shape[0], -1).to(device)
-                features = recon_tokens[0]
-                features = features[mask]
-                target = target[mask]
-                if features.numel() == 0:
-                    continue
-                if train:
-                    optimizer.zero_grad(set_to_none=True)
-                pred = head(features)
-                loss = F.mse_loss(pred, target)
-                if train:
-                    loss.backward()
-                    optimizer.step()
-                losses.append(loss.item())
+            recon_tokens, mask = reconstruct_tokens(
+                model,
+                clips,
+                mask_ratio=mask_ratio,
+                mask_mode=mask_mode,
+                seed=seed_offset + batch_idx,
+            )
+            tubelets, _ = batch_patchify_clips(
+                clips.detach().cpu(),
+                patch_size=patch_size,
+                tubelet_size=tubelet_size,
+            )
+            target = tubelets.flatten(start_dim=2).to(device)
+            features = recon_tokens[:, mask]
+            target = target[:, mask]
+            if features.numel() == 0:
+                continue
+            if train:
+                optimizer.zero_grad(set_to_none=True)
+            pred = head(features)
+            loss = F.mse_loss(pred, target)
+            if train:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(head.parameters(), max_norm=1.0)
+                optimizer.step()
+            losses.append(loss.item())
     return float(np.mean(losses)) if losses else float("nan")
+
+
+def _checkpoint_fingerprint(checkpoint_path: str | Path) -> str:
+    path = Path(checkpoint_path).resolve()
+    stat = path.stat()
+    identity = f"{path}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
+    return hashlib.sha1(identity).hexdigest()[:10]
 
 
 def build_reconstruction_head(
@@ -561,8 +638,11 @@ def build_reconstruction_head(
     image_size: int = 224,
     num_frames: int = 16,
     batch_size: int = 2,
-    epochs: int = 3,
+    epochs: int = 10,
     lr: float = 1e-3,
+    hidden_dim: int | None = None,
+    num_blocks: int = 2,
+    dropout: float = 0.1,
     mask_ratio: float = 0.5,
     mask_mode: MaskMode = "random",
     seed: int = 0,
@@ -572,9 +652,12 @@ def build_reconstruction_head(
     cache_path = None
     if cache_dir is not None:
         checkpoint_stem = Path(checkpoint_path).stem
+        checkpoint_id = _checkpoint_fingerprint(checkpoint_path)
+        hidden_key = str(hidden_dim) if hidden_dim is not None else "auto"
         cache_name = (
-            f"reconstruction_head_{checkpoint_stem}_{source_split}_{subset_size}_{image_size}_{num_frames}"
-            f"_{int(mask_ratio * 100)}_{mask_mode}.pt"
+            f"reconstruction_head_v2_{checkpoint_stem}_{checkpoint_id}_{source_split}_{subset_size}"
+            f"_{image_size}_{num_frames}_{int(mask_ratio * 100)}_{mask_mode}_{hidden_key}"
+            f"_{num_blocks}_{dropout:g}_{epochs}_{lr:g}_{seed}.pt"
         )
         cache_path = Path(cache_dir) / cache_name
         if cache_path.exists():
@@ -584,6 +667,8 @@ def build_reconstruction_head(
                 embed_dim=bundle.embed_dim,
                 tubelet_dim=bundle.tubelet_dim,
                 hidden_dim=bundle.hidden_dim,
+                num_blocks=bundle.num_blocks,
+                dropout=bundle.dropout,
             )
             head.load_state_dict(bundle.state_dict)
             return head.eval(), bundle
@@ -610,11 +695,21 @@ def build_reconstruction_head(
     patch_size = model.encoder.patch_embed.patch_size
     tubelet_size = model.encoder.patch_embed.tubelet_size
     tubelet_dim = tubelet_size * 3 * patch_size * patch_size
-    head = TubeletDecoderHead(embed_dim=model.embed_dim, tubelet_dim=tubelet_dim).to(next(model.parameters()).device)
+    head = TubeletDecoderHead(
+        embed_dim=model.embed_dim,
+        tubelet_dim=tubelet_dim,
+        hidden_dim=hidden_dim,
+        num_blocks=num_blocks,
+        dropout=dropout,
+    ).to(next(model.parameters()).device)
     optimizer = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=1e-4)
 
     train_loss = float("nan")
     val_loss = float("nan")
+    best_val_loss = float("inf")
+    best_train_loss = float("nan")
+    best_epoch = 0
+    best_state = {name: tensor.detach().cpu().clone() for name, tensor in head.state_dict().items()}
     for epoch in range(epochs):
         train_loss = _fit_head_epoch(
             model,
@@ -642,12 +737,32 @@ def build_reconstruction_head(
             train=False,
             seed_offset=seed + 10_000 + epoch * 100,
         )
+        print(
+            f"decoder head epoch {epoch + 1}/{epochs}: "
+            f"train_loss={train_loss:.6f} val_loss={val_loss:.6f}"
+        )
+        if math.isfinite(val_loss) and val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_train_loss = train_loss
+            best_epoch = epoch + 1
+            best_state = {
+                name: tensor.detach().cpu().clone()
+                for name, tensor in head.state_dict().items()
+            }
+
+    head.load_state_dict(best_state)
+    head = head.to(next(model.parameters()).device)
+    val_loss = best_val_loss if math.isfinite(best_val_loss) else val_loss
+    train_loss = best_train_loss if math.isfinite(best_train_loss) else train_loss
 
     bundle = TubeletDecoderHeadBundle(
-        state_dict=head.state_dict(),
+        state_dict={name: tensor.detach().cpu() for name, tensor in head.state_dict().items()},
         embed_dim=model.embed_dim,
         tubelet_dim=tubelet_dim,
         hidden_dim=head.hidden_dim,
+        num_blocks=head.num_blocks,
+        dropout=head.dropout,
+        architecture_version=2,
         patch_size=patch_size,
         tubelet_size=tubelet_size,
         image_size=image_size,
@@ -657,80 +772,12 @@ def build_reconstruction_head(
         mask_ratio=mask_ratio,
         train_loss=train_loss,
         val_loss=val_loss,
+        best_epoch=best_epoch,
     )
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(bundle.to_payload(), cache_path)
     return head.eval(), bundle
-
-
-@torch.no_grad()
-def reconstruct_clip_with_decoder(
-    checkpoint_path: str | Path,
-    head: TubeletDecoderHead,
-    clip: torch.Tensor,
-    mask_ratio: float = 0.5,
-    mask_mode: MaskMode = "middle",
-    seed: int = 0,
-    device: str | None = None,
-) -> dict:
-    model = _load_model(checkpoint_path, device=device)
-    clip = clip.detach().cpu()
-    raw_tubelets, (t_blocks, h_blocks, w_blocks) = patchify_clip(
-        clip,
-        patch_size=model.encoder.patch_embed.patch_size,
-        tubelet_size=model.encoder.patch_embed.tubelet_size,
-    )
-    clips = clip.unsqueeze(0).to(next(model.parameters()).device)
-    recon_tokens, mask = reconstruct_tokens(
-        model,
-        clips,
-        mask_ratio=mask_ratio,
-        mask_mode=mask_mode,
-        seed=seed,
-    )
-    recon_tokens = recon_tokens[0].detach().cpu()
-    head_device = next(head.parameters()).device
-    pred_flat = head(recon_tokens.to(head_device)).detach().cpu()
-    pred_tubelets = _flat_to_tubelets(
-        pred_flat,
-        tubelet_size=model.encoder.patch_embed.tubelet_size,
-        patch_size=model.encoder.patch_embed.patch_size,
-    )
-    reconstructed = raw_tubelets.clone()
-    reconstructed[mask.cpu()] = pred_tubelets[mask.cpu()]
-    masked = raw_tubelets.clone()
-    masked[mask.cpu()] = torch.zeros_like(masked[mask.cpu()])
-    mse = 0.0
-    if mask.any():
-        mse = float(F.mse_loss(pred_flat[mask.cpu()], _tubelets_to_flat(raw_tubelets)[mask.cpu()]).item())
-    return {
-        "mask": mask.cpu(),
-        "original_clip": clip,
-        "masked_clip": unpatchify_tubelets(
-            masked,
-            t_blocks,
-            h_blocks,
-            w_blocks,
-            patch_size=model.encoder.patch_embed.patch_size,
-            tubelet_size=model.encoder.patch_embed.tubelet_size,
-        ),
-        "reconstructed_clip": unpatchify_tubelets(
-            reconstructed,
-            t_blocks,
-            h_blocks,
-            w_blocks,
-            patch_size=model.encoder.patch_embed.patch_size,
-            tubelet_size=model.encoder.patch_embed.tubelet_size,
-        ),
-        "t_blocks": t_blocks,
-        "h_blocks": h_blocks,
-        "w_blocks": w_blocks,
-        "patch_size": model.encoder.patch_embed.patch_size,
-        "tubelet_size": model.encoder.patch_embed.tubelet_size,
-        "reconstruction_loss": mse,
-        "mode": "decoder",
-    }
 
 
 @torch.no_grad()
@@ -769,7 +816,7 @@ def reconstruct_clip_with_decoder(
     reconstructed[mask.cpu()] = pred_tubelets[mask.cpu()]
     masked = raw_tubelets.clone()
     masked[mask.cpu()] = torch.zeros_like(masked[mask.cpu()])
-    mse = float(F.mse_loss(pred_flat[mask.cpu()], _tubelets_to_flat(raw_tubelets)[mask.cpu()]).item()) if mask.any() else 0.0
+    metrics = masked_reconstruction_metrics(pred_tubelets, raw_tubelets, mask)
     return {
         "mask": mask.cpu(),
         "original_clip": clip,
@@ -792,7 +839,9 @@ def reconstruct_clip_with_decoder(
         "t_blocks": t_blocks,
         "h_blocks": h_blocks,
         "w_blocks": w_blocks,
-        "reconstruction_loss": mse,
+        "patch_size": model.encoder.patch_embed.patch_size,
+        "tubelet_size": model.encoder.patch_embed.tubelet_size,
+        **metrics,
         "mode": "decoder",
     }
 
@@ -898,6 +947,10 @@ def save_reconstruction_artifacts(result: dict, output_dir: str | Path, fps: int
     }
     if "reconstruction_loss" in result:
         payload["reconstruction_loss"] = float(result["reconstruction_loss"])
+    if "masked_pixel_mse" in result:
+        payload["masked_pixel_mse"] = float(result["masked_pixel_mse"])
+    if "psnr_db" in result:
+        payload["psnr_db"] = float(result["psnr_db"])
     if "mode" in result:
         payload["mode"] = str(result["mode"])
     (output_dir / "result.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

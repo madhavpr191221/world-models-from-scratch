@@ -55,7 +55,13 @@ runBtn.addEventListener("click", async () => {
     originalDownload.href = data.artifacts.original_video;
     maskedDownload.href = data.artifacts.masked_video;
     reconstructedDownload.href = data.artifacts.reconstructed_video;
-    const extra = data.metrics?.reconstruction_loss != null ? ` Reconstruction loss ${Number(data.metrics.reconstruction_loss).toFixed(4)}.` : "";
+    const lossText = data.metrics?.reconstruction_loss != null
+      ? ` Normalized MSE ${Number(data.metrics.reconstruction_loss).toFixed(4)}.`
+      : "";
+    const psnrText = data.metrics?.psnr_db != null
+      ? ` Masked-region PSNR ${Number(data.metrics.psnr_db).toFixed(2)} dB.`
+      : "";
+    const extra = `${lossText}${psnrText}`;
     setStatus(`Done. Run ${data.run_id} saved.${extra}`);
   } catch (err) {
     setStatus(`Reconstruction failed: ${err.message}`);

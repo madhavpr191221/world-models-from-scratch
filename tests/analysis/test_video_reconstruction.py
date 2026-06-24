@@ -7,6 +7,7 @@ import torch
 from jepa_world_models.analysis.video_reconstruction import (
     TubeletDecoderHead,
     batch_patchify_clips,
+    masked_reconstruction_metrics,
     patchify_clip,
     unpatchify_tubelets,
 )
@@ -29,7 +30,19 @@ def test_batch_patchify_returns_expected_shape() -> None:
 
 
 def test_tubelet_decoder_head_shape() -> None:
-    head = TubeletDecoderHead(embed_dim=192, tubelet_dim=1536)
-    x = torch.randn(5, 192)
+    head = TubeletDecoderHead(embed_dim=192, tubelet_dim=1536, hidden_dim=256, num_blocks=2)
+    x = torch.randn(2, 5, 192)
     y = head(x)
-    assert y.shape == (5, 1536)
+    assert y.shape == (2, 5, 1536)
+
+
+def test_masked_reconstruction_metrics_are_mask_local() -> None:
+    target = torch.zeros(2, 2, 3, 4, 4)
+    predicted = target.clone()
+    predicted[1] = 1.0
+    first_only = masked_reconstruction_metrics(predicted, target, torch.tensor([True, False]))
+    second_only = masked_reconstruction_metrics(predicted, target, torch.tensor([False, True]))
+    assert first_only["reconstruction_loss"] == 0.0
+    assert first_only["psnr_db"] == float("inf")
+    assert second_only["reconstruction_loss"] > 0.0
+    assert second_only["masked_pixel_mse"] > 0.0

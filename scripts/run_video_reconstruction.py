@@ -20,8 +20,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--data-root", type=str, default="data")
     parser.add_argument("--source-split", type=str, default="train")
-    parser.add_argument("--subset-size", type=int, default=128)
+    parser.add_argument("--subset-size", type=int, default=512)
     parser.add_argument("--bank-batch-size", type=int, default=4)
+    parser.add_argument("--head-epochs", type=int, default=10)
+    parser.add_argument("--head-lr", type=float, default=1e-3)
+    parser.add_argument("--head-hidden-dim", type=int, default=None)
+    parser.add_argument("--head-blocks", type=int, default=2)
+    parser.add_argument("--head-dropout", type=float, default=0.1)
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--num-frames", type=int, default=16)
     parser.add_argument("--mask-ratio", type=float, default=0.5)
@@ -62,6 +67,12 @@ def main() -> None:
             image_size=args.image_size,
             num_frames=args.num_frames,
             batch_size=args.bank_batch_size,
+            epochs=args.head_epochs,
+            lr=args.head_lr,
+            hidden_dim=args.head_hidden_dim,
+            num_blocks=args.head_blocks,
+            dropout=args.head_dropout,
+            seed=args.seed,
             cache_dir=args.cache_dir,
         )
 
@@ -114,11 +125,14 @@ def main() -> None:
         payload["head_checkpoint"] = head_bundle.checkpoint_path
         payload["head_train_loss"] = head_bundle.train_loss
         payload["head_val_loss"] = head_bundle.val_loss
+        payload["head_best_epoch"] = head_bundle.best_epoch
     (run_dir / "result.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"Wrote reconstruction artifacts to {run_dir}")
     print(f"original_video={payload['original_video']}")
     print(f"masked_video={payload['masked_video']}")
     print(f"reconstructed_video={payload['reconstructed_video']}")
+    if "psnr_db" in payload:
+        print(f"psnr_db={payload['psnr_db']:.3f}")
 
 
 if __name__ == "__main__":
