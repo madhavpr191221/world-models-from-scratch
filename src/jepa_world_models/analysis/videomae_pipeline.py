@@ -1,4 +1,4 @@
-"""VideoMAE pretraining and feature extraction for video clips.
+﻿"""VideoMAE pretraining and feature extraction for video clips.
 
 This module implements a compact VideoMAE-style pipeline:
 - sample short clips from Something-Something V2 videos
@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 
@@ -275,8 +276,13 @@ class VideoMAEEncoder(nn.Module):
         assert image_size % patch_size == 0
         assert num_frames % tubelet_size == 0
         self.embed_dim = embed_dim
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.tubelet_size = tubelet_size
+        self.base_temporal_steps = num_frames // tubelet_size
+        self.spatial_tokens = (image_size // patch_size) ** 2
         self.patch_embed = TubePatchEmbed(3, embed_dim, patch_size, tubelet_size)
-        num_tokens = (image_size // patch_size) ** 2 * (num_frames // tubelet_size)
+        num_tokens = self.base_temporal_steps * self.spatial_tokens
         self.pos_embed = nn.Parameter(torch.zeros(1, num_tokens, embed_dim))
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
@@ -294,24 +300,42 @@ class VideoMAEEncoder(nn.Module):
     def _reset_parameters(self) -> None:
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
+    def _pos_embed_for_frames(self, num_frames: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+        temporal_steps = num_frames // self.tubelet_size
+        if temporal_steps <= 0:
+            raise ValueError("num_frames is too small for the configured tubelet size.")
+        if temporal_steps == self.base_temporal_steps:
+            return self.pos_embed.to(device=device, dtype=dtype)
+        spatial_side = self.image_size // self.patch_size
+        pos = self.pos_embed.reshape(1, self.base_temporal_steps, spatial_side, spatial_side, self.embed_dim)
+        pos = pos.permute(0, 4, 1, 2, 3)
+        pos = F.interpolate(
+            pos,
+            size=(temporal_steps, spatial_side, spatial_side),
+            mode="trilinear",
+            align_corners=False,
+        )
+        pos = pos.permute(0, 2, 3, 4, 1).contiguous()
+        return pos.reshape(1, temporal_steps * self.spatial_tokens, self.embed_dim).to(device=device, dtype=dtype)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         tokens = self.patch_embed(x)
-        tokens = tokens + self.pos_embed[:, : tokens.shape[1]]
+        pos = self._pos_embed_for_frames(x.shape[1], device=tokens.device, dtype=tokens.dtype)
+        tokens = tokens + pos[:, : tokens.shape[1]]
         tokens = self.blocks(tokens)
         return self.norm(tokens)
 
     def forward_sequence(self, x: torch.Tensor) -> torch.Tensor:
         """Return mean spatial tokens per temporal slice: (B, T', D)."""
         tokens = self.patch_embed(x)
-        tokens = tokens + self.pos_embed[:, : tokens.shape[1]]
+        pos = self._pos_embed_for_frames(x.shape[1], device=tokens.device, dtype=tokens.dtype)
+        tokens = tokens + pos[:, : tokens.shape[1]]
         tokens = self.blocks(tokens)
         tokens = self.norm(tokens)
         batch, seq_len, dim = tokens.shape
-        temporal_steps = x.shape[1] // 2
+        temporal_steps = x.shape[1] // self.tubelet_size
         spatial_tokens = seq_len // temporal_steps
         return tokens.view(batch, temporal_steps, spatial_tokens, dim).mean(dim=2)
-
-
 class VideoMAEDecoder(nn.Module):
     def __init__(self, embed_dim: int = 192, decoder_dim: int = 128, depth: int = 2, num_heads: int = 4) -> None:
         super().__init__()
@@ -366,7 +390,7 @@ class VideoMAEModel(nn.Module):
 
     def forward(self, clips: torch.Tensor, mask_ratio: float = 0.75) -> tuple[torch.Tensor, torch.Tensor]:
         tokens = self.encoder.patch_embed(clips)
-        tokens = tokens + self.encoder.pos_embed[:, : tokens.shape[1]]
+        tokens = tokens + self.encoder._pos_embed_for_frames(clips.shape[1], device=tokens.device, dtype=tokens.dtype)[:, : tokens.shape[1]]
         visible, mask = self._mask_tokens(tokens, mask_ratio)
         latent = self.encoder.blocks(visible)
         latent = self.encoder.norm(latent)
@@ -531,3 +555,6 @@ def extract_videomae_features(
     clips = clips.to(device)
     tokens = model.encoder.forward_sequence(clips)
     return tokens.detach().cpu()
+
+
+
