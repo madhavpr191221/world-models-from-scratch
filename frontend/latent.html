@@ -14,8 +14,8 @@
           <p class="eyebrow">Video</p>
           <h1>Latent Projection Map</h1>
           <p class="lede">
-            Pick a clip, project its latent trajectory into 2D, and compare the
-            observed context with the true and predicted future paths.
+            Load a clip, choose a projection method, then play the video and
+            watch the latent forecast unfold in 2D.
           </p>
         </div>
         <nav class="nav">
@@ -27,23 +27,50 @@
         </nav>
       </header>
 
-      <section class="panel controls latent-controls">
-        <div class="control-group">
-          <label for="exampleSelect">Example clip</label>
-          <select id="exampleSelect"></select>
+      <section class="panel workflow-panel">
+        <div class="workflow-step is-active">
+          <div class="workflow-index">1</div>
+          <div>
+            <p class="workflow-label">Choose a clip</p>
+            <p class="workflow-copy">
+              Pick a sample from the dataset and load its latent trajectory.
+            </p>
+            <label class="control-group workflow-control" for="exampleSelect">
+              <span>Example clip</span>
+              <select id="exampleSelect"></select>
+            </label>
+          </div>
         </div>
-        <div class="control-group">
-          <label for="methodSelect">Projection method</label>
-          <select id="methodSelect">
-            <option value="pca">PCA</option>
-            <option value="tsne">t-SNE (slower)</option>
-          </select>
+        <div class="workflow-step">
+          <div class="workflow-index">2</div>
+          <div>
+            <p class="workflow-label">Choose projection</p>
+            <p class="workflow-copy">
+              PCA is stable and fast. t-SNE is slower but can expose local
+              clustering.
+            </p>
+            <label class="control-group workflow-control" for="methodSelect">
+              <span>Projection method</span>
+              <select id="methodSelect">
+                <option value="pca">PCA</option>
+                <option value="tsne">t-SNE (slower)</option>
+              </select>
+            </label>
+          </div>
         </div>
-        <div class="control-group actions">
-          <button id="loadButton" type="button">Load clip</button>
-          <button id="playButton" type="button">Play</button>
-          <button id="stepBackButton" type="button">-1 step</button>
-          <button id="stepForwardButton" type="button">+1 step</button>
+        <div class="workflow-step workflow-step-action">
+          <div class="workflow-index">3</div>
+          <div>
+            <p class="workflow-label">Load and inspect</p>
+            <p class="workflow-copy">
+              Load the clip, then play it to animate the latent forecast on the
+              map.
+            </p>
+            <div class="control-group actions workflow-actions">
+              <button id="loadButton" type="button">Load clip and project</button>
+              <span id="statusPill" class="status-pill">Ready to load</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -52,18 +79,23 @@
           <div class="panel-header">
             <div>
               <p class="label">Query clip</p>
-              <h2 id="clipTitle">Loading...</h2>
+              <h2 id="clipTitle">Select a clip to begin</h2>
             </div>
             <div class="meta">
-              <span id="clipMeta"></span>
-              <span id="clipFrames"></span>
+              <span id="clipMeta">No clip loaded</span>
+              <span id="clipFrames">0 latent steps</span>
             </div>
           </div>
           <video id="videoPlayer" controls playsinline></video>
-          <input id="stepSlider" type="range" min="0" max="0" value="0" step="1" />
+          <input id="stepSlider" type="range" min="0" max="0" value="0" step="1" disabled />
           <div class="caption-row">
-            <span id="stepLabel">Step 0</span>
-            <span id="phaseLabel">Waiting for clip</span>
+            <span id="stepLabel">Waiting for clip</span>
+            <span id="phaseLabel">Choose a clip, then load it</span>
+          </div>
+          <div class="playback-actions">
+            <button id="playButton" type="button" disabled>Play and predict</button>
+            <button id="stepBackButton" type="button" disabled>-1 step</button>
+            <button id="stepForwardButton" type="button" disabled>+1 step</button>
           </div>
         </article>
 
@@ -74,10 +106,15 @@
               <h2>Observed context vs forecast</h2>
             </div>
             <div class="meta">
-              <span id="projectionSummary"></span>
+              <span id="projectionSummary">Awaiting clip</span>
             </div>
           </div>
-          <svg id="projectionSvg" viewBox="0 0 100 100" aria-label="Latent projection map"></svg>
+          <div class="projection-wrap">
+            <svg id="projectionSvg" viewBox="0 0 100 100" aria-label="Latent projection map"></svg>
+            <div id="projectionEmpty" class="projection-empty">
+              Load a clip to generate the latent map.
+            </div>
+          </div>
           <div class="projection-legend">
             <span><span class="legend-chip context"></span>Context</span>
             <span><span class="legend-chip future-true"></span>True future</span>
@@ -92,6 +129,9 @@
           <div>
             <p class="label">Scores</p>
             <h2>Latent-space comparison</h2>
+          </div>
+          <div class="meta">
+            <span id="projectionSummarySecondary">Load a clip to see scores</span>
           </div>
         </div>
         <div class="metric-grid">
@@ -125,10 +165,32 @@
       <section class="panel explanation-panel latent-explanation">
         <p class="label">What to look for</p>
         <p id="explanationText">
-          The context path is the observed clip. The red path is the model's
-          forecast. If the red path stays close to the green path, the model is
-          tracking future dynamics rather than collapsing to a single point.
+          Load a clip first. Then compare the orange context path, the green
+          true future path, and the red predicted future path.
         </p>
+      </section>
+
+      <section class="panel latent-guide">
+        <div class="panel-header">
+          <div>
+            <p class="label">Flow</p>
+            <h2>How to use this page</h2>
+          </div>
+        </div>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <h3>1. Load a clip</h3>
+            <p>Pick a sample from the dropdown and press <strong>Load clip and project</strong>.</p>
+          </article>
+          <article class="guide-card">
+            <h3>2. Choose projection</h3>
+            <p>Use PCA for a quick global view or t-SNE when you want local clustering detail.</p>
+          </article>
+          <article class="guide-card">
+            <h3>3. Play the video</h3>
+            <p>Press <strong>Play and predict</strong> to animate the latent path alongside playback.</p>
+          </article>
+        </div>
       </section>
     </main>
 

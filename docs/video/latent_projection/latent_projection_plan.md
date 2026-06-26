@@ -151,3 +151,14 @@ That is the right level of feedback for iterating toward a stronger JEPA-style w
 2. add a small decoder or video reconstruction preview for predicted latents
 3. add a temporal embedding animation view for longer clips
 4. make the projection page accept arbitrary clip lengths while respecting the encoder window constraints
+
+## Interaction Flow
+
+The page now follows a strict order:
+
+1. choose a clip
+2. choose PCA or t-SNE
+3. press load
+4. press play to animate the latent forecast
+
+Changing the clip or the projection after loading marks the view as stale until the clip is loaded again. That avoids showing an old forecast as if it belonged to the new selection.

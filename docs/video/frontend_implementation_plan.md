@@ -213,3 +213,16 @@ The page should make the geometry of the latent sequence visible:
 
 The page should stay simple and research-oriented.
 Avoid turning it into a metric wall or a generic dashboard.
+
+## Latent Projection UX Flow
+
+The latent projection browser now uses a staged flow rather than exposing every control at once.
+
+The intended order is:
+
+1. select a clip
+2. choose PCA or t-SNE
+3. press load to run the projection
+4. press play to animate the latent trajectory
+
+This keeps the page from feeling like a dense metrics dashboard and makes the latent forecast read like a guided analysis.

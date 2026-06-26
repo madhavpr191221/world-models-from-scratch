@@ -4,6 +4,7 @@
   currentStep: 0,
   projectionMethod: "pca",
   rafId: null,
+  isLoaded: false,
 };
 
 const els = {
@@ -13,6 +14,7 @@ const els = {
   playButton: document.getElementById("playButton"),
   stepBackButton: document.getElementById("stepBackButton"),
   stepForwardButton: document.getElementById("stepForwardButton"),
+  statusPill: document.getElementById("statusPill"),
   clipTitle: document.getElementById("clipTitle"),
   clipMeta: document.getElementById("clipMeta"),
   clipFrames: document.getElementById("clipFrames"),
@@ -21,7 +23,10 @@ const els = {
   stepLabel: document.getElementById("stepLabel"),
   phaseLabel: document.getElementById("phaseLabel"),
   projectionSvg: document.getElementById("projectionSvg"),
+  projectionWrap: document.querySelector(".projection-wrap"),
+  projectionEmpty: document.getElementById("projectionEmpty"),
   projectionSummary: document.getElementById("projectionSummary"),
+  projectionSummarySecondary: document.getElementById("projectionSummarySecondary"),
   latentMse: document.getElementById("latentMse"),
   normalizedLatentMse: document.getElementById("normalizedLatentMse"),
   cosineSimilarity: document.getElementById("cosineSimilarity"),
@@ -80,6 +85,19 @@ function setMetric(el, value, digits = 4) {
   el.textContent = nice(value, digits);
 }
 
+function setStatus(text) {
+  if (els.statusPill) {
+    els.statusPill.textContent = text;
+  }
+}
+
+function setPlaybackEnabled(enabled) {
+  els.playButton.disabled = !enabled;
+  els.stepBackButton.disabled = !enabled;
+  els.stepForwardButton.disabled = !enabled;
+  els.stepSlider.disabled = !enabled;
+}
+
 function scalePoints(points, bounds) {
   const pad = 10;
   const width = 100;
@@ -114,10 +132,27 @@ function interpolatePoint(points, index, ratio) {
   };
 }
 
+function renderEmptyProjection() {
+  els.projectionSvg.innerHTML = "";
+  if (els.projectionWrap) {
+    els.projectionWrap.classList.remove("is-loaded");
+  }
+  if (els.projectionEmpty) {
+    els.projectionEmpty.hidden = false;
+  }
+}
+
 function renderProjection(currentStep = 0, stepRatio = 0) {
   if (!state.analysis) {
-    els.projectionSvg.innerHTML = "";
+    renderEmptyProjection();
     return;
+  }
+
+  if (els.projectionWrap) {
+    els.projectionWrap.classList.add("is-loaded");
+  }
+  if (els.projectionEmpty) {
+    els.projectionEmpty.hidden = true;
   }
 
   const bounds = state.analysis.bounds;
@@ -196,9 +231,25 @@ function renderHeader() {
   els.clipMeta.textContent = query.video_id;
   els.clipFrames.textContent = `${query.context_steps + query.future_steps} latent steps`;
   els.projectionSummary.textContent = `${state.analysis.projection_method.toUpperCase()} · ${query.latent_dim}-D to 2-D`;
+  els.projectionSummarySecondary.textContent = `${query.context_steps} context steps, ${query.future_steps} future steps`;
   els.explanationText.textContent = state.analysis.projection_method === "tsne"
     ? "t-SNE is a local projection. It is useful for inspection, but PCA is usually better for quick live playback and stable comparison."
-    : "The background cloud is built from clip-level latent summaries. The red trajectory is the model forecast; the green trajectory is the actual future latent path.";
+    : "The background cloud is built from clip-level latent summaries. The orange trajectory is the observed context; green is the true future; red is the model forecast.";
+}
+
+function renderPlaceholderState() {
+  renderEmptyProjection();
+  els.clipTitle.textContent = "Select a clip to begin";
+  els.clipMeta.textContent = "No clip loaded";
+  els.clipFrames.textContent = "0 latent steps";
+  els.projectionSummary.textContent = "Awaiting clip";
+  if (els.projectionSummarySecondary) {
+    els.projectionSummarySecondary.textContent = "Load a clip to see scores";
+  }
+  setStatus("Ready to load");
+  setPlaybackEnabled(false);
+  els.stepLabel.textContent = "Waiting for clip";
+  els.phaseLabel.textContent = "Choose a clip, then load it";
 }
 
 function renderAll(step = 0, ratio = 0) {
@@ -238,7 +289,7 @@ function syncFromVideo() {
 }
 
 function updatePlayButton() {
-  els.playButton.textContent = els.videoPlayer.paused ? "Play" : "Pause";
+  els.playButton.textContent = els.videoPlayer.paused ? "Play and predict" : "Pause playback";
 }
 
 function schedulePlaybackSync() {
@@ -267,8 +318,10 @@ async function loadExamples() {
 
 async function loadAnalysis(index) {
   const method = selectedMethod();
+  setStatus(`Loading ${method.toUpperCase()} projection...`);
   const payload = await fetchJson(`/api/latent/analyze?index=${encodeURIComponent(index)}&method=${encodeURIComponent(method)}&background_sample_size=512&seed=0`);
   state.analysis = payload;
+  state.isLoaded = true;
   renderHeader();
   renderMetrics();
   els.videoPlayer.src = payload.query.video_url;
@@ -277,27 +330,40 @@ async function loadAnalysis(index) {
   els.stepSlider.max = String(Math.max(totalSteps() - 1, 0));
   els.stepSlider.value = "0";
   state.currentStep = 0;
+  setPlaybackEnabled(true);
   renderAll(0, 0);
   updatePlayButton();
+  setStatus(`Loaded ${payload.query.filename}`);
 }
 
 async function init() {
+  renderPlaceholderState();
   await loadExamples();
   const initialIndex = state.examples[0]?.index ?? 0;
   els.exampleSelect.value = String(initialIndex);
-  await loadAnalysis(initialIndex);
+  setStatus("Ready to load");
 
   els.loadButton.addEventListener("click", async () => {
     await loadAnalysis(selectedIndex());
   });
 
-  els.exampleSelect.addEventListener("change", async () => {
-    await loadAnalysis(selectedIndex());
+  els.exampleSelect.addEventListener("change", () => {
+    if (state.analysis) {
+      setPlaybackEnabled(false);
+      setStatus("Clip changed. Reload to update the map.");
+      return;
+    }
+    setStatus("Clip selected. Press load to project.");
   });
 
-  els.methodSelect.addEventListener("change", async () => {
+  els.methodSelect.addEventListener("change", () => {
     state.projectionMethod = selectedMethod();
-    await loadAnalysis(selectedIndex());
+    if (state.analysis) {
+      setPlaybackEnabled(false);
+      setStatus(`Projection changed to ${state.projectionMethod.toUpperCase()}. Reload to update the map.`);
+      return;
+    }
+    setStatus(`Projection set to ${state.projectionMethod.toUpperCase()}. Press load to project.`);
   });
 
   els.playButton.addEventListener("click", async () => {
@@ -344,6 +410,8 @@ async function init() {
 
 init().catch((error) => {
   console.error(error);
+  setStatus("Failed to load demo");
   els.phaseLabel.textContent = `Failed to load demo: ${error.message}`;
   els.explanationText.textContent = "The latent projection browser could not load its backend data.";
 });
+
