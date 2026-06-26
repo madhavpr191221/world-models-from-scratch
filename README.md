@@ -153,3 +153,22 @@ It is to test whether the frozen representation keeps temporal order.
 - `docs/video/video_classification_thing.md`
 - `docs/video/frontend_implementation_plan.md`
 
+
+## Latent Projection Browser
+
+The repo now includes a browser-hosted latent projection page.
+
+Run it with:
+
+```powershell
+uv run python scripts/video/serve_video_latent_projection.py --world-model-checkpoint logs/video_world_model/latent_world_model_best_videomae_1400170f03_train_2000_224_26_20_6.pt --data-root data --source-split train --subset-size 2000 --context-seconds 5.0 --future-seconds 1.5 --sample-fps 4.0 --feature-batch-size 1 --projection-method pca --host 127.0.0.1 --port 8002
+```
+
+The companion analysis CLI is:
+
+```powershell
+uv run python scripts/video/run_video_latent_projection.py --world-model-checkpoint logs/video_world_model/latent_world_model_best_videomae_1400170f03_train_2000_224_26_20_6.pt --data-root data --source-split train --subset-size 2000 --context-seconds 5.0 --future-seconds 1.5 --sample-fps 4.0 --feature-batch-size 1 --projection-method pca
+```
+
+These commands use the same time-to-frame conversion as the trainer.
+That keeps the browser view aligned with the world-model checkpoint.

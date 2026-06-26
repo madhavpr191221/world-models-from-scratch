@@ -1,0 +1,158 @@
+﻿.latent-page .latent-controls {
+  align-items: end;
+}
+
+.latent-grid {
+  align-items: start;
+}
+
+.latent-video-panel video {
+  aspect-ratio: 16 / 9;
+}
+
+.projection-panel {
+  padding: 18px;
+}
+
+#projectionSvg {
+  width: 100%;
+  min-height: 480px;
+  margin-top: 14px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at center, rgba(244, 182, 63, 0.12), transparent 42%),
+    rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(31, 26, 23, 0.08);
+}
+
+.projection-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.legend-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.legend-chip.context {
+  background: var(--accent);
+}
+
+.legend-chip.future-true {
+  background: #2f8f56;
+}
+
+.legend-chip.future-pred {
+  background: #b83d57;
+}
+
+.legend-chip.background {
+  background: rgba(31, 26, 23, 0.22);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.metric-card {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 242, 230, 0.95));
+}
+
+.metric-label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.metric-value {
+  margin: 0;
+  font-size: 1.28rem;
+  font-weight: 700;
+}
+
+.latent-explanation {
+  margin-top: 20px;
+}
+
+.latent-background-point {
+  fill: rgba(31, 26, 23, 0.14);
+  stroke: rgba(31, 26, 23, 0.08);
+  stroke-width: 0.3;
+}
+
+.latent-background-point:hover {
+  fill: rgba(31, 26, 23, 0.35);
+}
+
+.latent-context-line {
+  fill: none;
+  stroke: rgba(209, 74, 31, 0.75);
+  stroke-width: 1.1;
+}
+
+.latent-true-line {
+  fill: none;
+  stroke: rgba(47, 143, 86, 0.82);
+  stroke-width: 1.1;
+}
+
+.latent-pred-line {
+  fill: none;
+  stroke: rgba(184, 61, 87, 0.88);
+  stroke-width: 1.1;
+  stroke-dasharray: 3 2;
+}
+
+.latent-boundary {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.latent-active-context {
+  fill: var(--accent);
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 0.9;
+  filter: drop-shadow(0 3px 6px rgba(209, 74, 31, 0.2));
+}
+
+.latent-active-true {
+  fill: #2f8f56;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 0.9;
+  filter: drop-shadow(0 3px 6px rgba(47, 143, 86, 0.2));
+}
+
+.latent-active-pred {
+  fill: #b83d57;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 0.9;
+  filter: drop-shadow(0 3px 6px rgba(184, 61, 87, 0.2));
+}
+
+.latent-status {
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}

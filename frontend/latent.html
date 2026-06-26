@@ -1,0 +1,137 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Latent Projection Map</title>
+    <link rel="stylesheet" href="/video.css" />
+    <link rel="stylesheet" href="/latent.css" />
+  </head>
+  <body>
+    <main class="page latent-page">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Video</p>
+          <h1>Latent Projection Map</h1>
+          <p class="lede">
+            Pick a clip, project its latent trajectory into 2D, and compare the
+            observed context with the true and predicted future paths.
+          </p>
+        </div>
+        <nav class="nav">
+          <a href="/index.html">Home</a>
+          <a href="/method.html">Method</a>
+          <a href="/results.html">Results</a>
+          <a href="/video.html">Video demo</a>
+          <a href="/latent.html" class="active">Latent map</a>
+        </nav>
+      </header>
+
+      <section class="panel controls latent-controls">
+        <div class="control-group">
+          <label for="exampleSelect">Example clip</label>
+          <select id="exampleSelect"></select>
+        </div>
+        <div class="control-group">
+          <label for="methodSelect">Projection method</label>
+          <select id="methodSelect">
+            <option value="pca">PCA</option>
+            <option value="tsne">t-SNE (slower)</option>
+          </select>
+        </div>
+        <div class="control-group actions">
+          <button id="loadButton" type="button">Load clip</button>
+          <button id="playButton" type="button">Play</button>
+          <button id="stepBackButton" type="button">-1 step</button>
+          <button id="stepForwardButton" type="button">+1 step</button>
+        </div>
+      </section>
+
+      <section class="grid latent-grid">
+        <article class="panel video-panel latent-video-panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Query clip</p>
+              <h2 id="clipTitle">Loading...</h2>
+            </div>
+            <div class="meta">
+              <span id="clipMeta"></span>
+              <span id="clipFrames"></span>
+            </div>
+          </div>
+          <video id="videoPlayer" controls playsinline></video>
+          <input id="stepSlider" type="range" min="0" max="0" value="0" step="1" />
+          <div class="caption-row">
+            <span id="stepLabel">Step 0</span>
+            <span id="phaseLabel">Waiting for clip</span>
+          </div>
+        </article>
+
+        <article class="panel projection-panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">2D map</p>
+              <h2>Observed context vs forecast</h2>
+            </div>
+            <div class="meta">
+              <span id="projectionSummary"></span>
+            </div>
+          </div>
+          <svg id="projectionSvg" viewBox="0 0 100 100" aria-label="Latent projection map"></svg>
+          <div class="projection-legend">
+            <span><span class="legend-chip context"></span>Context</span>
+            <span><span class="legend-chip future-true"></span>True future</span>
+            <span><span class="legend-chip future-pred"></span>Predicted future</span>
+            <span><span class="legend-chip background"></span>Background clip means</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel latent-stats">
+        <div class="panel-header">
+          <div>
+            <p class="label">Scores</p>
+            <h2>Latent-space comparison</h2>
+          </div>
+        </div>
+        <div class="metric-grid">
+          <article class="metric-card">
+            <p class="metric-label">Latent MSE</p>
+            <p id="latentMse" class="metric-value">-</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Normalized MSE</p>
+            <p id="normalizedLatentMse" class="metric-value">-</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Cosine similarity</p>
+            <p id="cosineSimilarity" class="metric-value">-</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Repeat-last MSE</p>
+            <p id="repeatLastMse" class="metric-value">-</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Mean-context MSE</p>
+            <p id="meanContextMse" class="metric-value">-</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Background points</p>
+            <p id="backgroundCount" class="metric-value">-</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel explanation-panel latent-explanation">
+        <p class="label">What to look for</p>
+        <p id="explanationText">
+          The context path is the observed clip. The red path is the model's
+          forecast. If the red path stays close to the green path, the model is
+          tracking future dynamics rather than collapsing to a single point.
+        </p>
+      </section>
+    </main>
+
+    <script src="/latent.js"></script>
+  </body>
+</html>

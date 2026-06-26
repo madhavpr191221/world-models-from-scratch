@@ -983,3 +983,25 @@ This plan gets the repository onto that trajectory without overcommitting to a l
 
 
 
+
+## Latent Projection Browser
+
+The browser-hosted latent projection demo lives in `frontend/latent.html` and is served by `scripts/video/serve_video_latent_projection.py`.
+
+It is built for inspection, not for training. The page loads one clip at a time and shows:
+
+- the selected video
+- a 2D projection of the clip-level latent cloud
+- the observed context trajectory
+- the true future trajectory
+- the predicted future trajectory
+
+The default projection is PCA because it is stable and cheap enough for live use. t-SNE is available when local structure matters more than speed.
+
+The latent projector uses clip means for the background cloud:
+
+$$
+\bar{\mathbf{z}} = \frac{1}{T}\sum_{t=1}^{T}\mathbf{z}_t.
+$$
+
+The selected clip still keeps the full sequence so the page can draw the actual temporal path through latent space.

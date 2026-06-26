@@ -181,3 +181,35 @@ Once the probe artifacts are ready:
 
 That is enough for the first useful version.
 
+
+## Latent Projection Page
+
+Add the latent projection browser as a peer page to the existing video demo.
+
+Files:
+
+- `frontend/latent.html`
+- `frontend/latent.css`
+- `frontend/latent.js`
+
+Serving script:
+
+- `scripts/video/serve_video_latent_projection.py`
+
+Training and analysis helper:
+
+- `scripts/video/run_video_latent_projection.py`
+
+This page is the first live presentation layer for the video world model.
+It is not a training UI.
+It is an inspection surface for a latent dynamics model that already exists on disk.
+
+The page should make the geometry of the latent sequence visible:
+
+- the background cloud shows where clip summaries live
+- the context path shows the observed history
+- the true future path shows the actual continuation
+- the predicted path shows the model forecast
+
+The page should stay simple and research-oriented.
+Avoid turning it into a metric wall or a generic dashboard.
