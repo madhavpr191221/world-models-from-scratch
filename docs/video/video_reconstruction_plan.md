@@ -389,7 +389,7 @@ PSNR makes runs with different head settings easier to compare, but the videos r
 ## Frontend Flow
 
 - user uploads a short video
-- user chooses a mask ratio and mask mode
+- user chooses a mask ratio and mask mode (the demo defaults to a gentler 30 percent mask so reconstruction is easier to inspect)
 - backend reconstructs the clip
 - frontend displays:
   - original video
@@ -419,5 +419,4 @@ The first run trains and caches the head. Later runs with the same settings load
 - reconstruction means masked reconstruction, not free-form generation
 - the first demo is decoder-first and frontend-visible
 - a separate browser-based UI is worth it because this is the first time the model will produce an obviously visual output
-
 

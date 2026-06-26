@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--head-dropout", type=float, default=0.1)
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--num-frames", type=int, default=16)
-    parser.add_argument("--mask-ratio", type=float, default=0.5)
+    parser.add_argument("--mask-ratio", type=float, default=0.3)
     parser.add_argument("--mask-mode", type=str, default="middle", choices=["middle", "random"])
     parser.add_argument("--reconstruction-mode", type=str, default="decoder", choices=["decoder", "retrieval"])
     parser.add_argument("--video-path", type=str, default=None)
@@ -137,3 +137,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
