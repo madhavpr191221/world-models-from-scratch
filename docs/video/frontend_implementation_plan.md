@@ -226,3 +226,33 @@ The intended order is:
 4. press play to animate the latent trajectory
 
 This keeps the page from feeling like a dense metrics dashboard and makes the latent forecast read like a guided analysis.
+
+## Upload Support
+
+The latent projection browser now accepts a real local video upload.
+
+That means the page can operate on either:
+
+- a dataset sample selected from the dropdown
+- a local clip selected through the file input
+
+The upload flow is intentionally simple:
+
+1. choose a clip source
+2. pick PCA or t-SNE
+3. press `Load clip and project`
+4. press `Play and predict`
+
+The backend stores uploaded videos under `logs/video_latent_projection/uploads` and runs the same latent-encoding path used for dataset videos.
+
+The page also labels the active source explicitly, so the user can tell whether the current latent forecast came from a dataset sample or a local upload.
+
+## Latent Projection Frontend Notes
+
+The page now uses a guided three-step flow:
+
+1. pick a dataset sample or upload a local clip
+2. choose PCA or t-SNE
+3. load the clip, then play it to inspect the latent forecast
+
+The UI also shows the active source explicitly so the user can tell when the analysis comes from a dataset sample versus an uploaded file.

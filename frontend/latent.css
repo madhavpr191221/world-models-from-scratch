@@ -297,3 +297,35 @@
     grid-template-columns: 1fr;
   }
 }
+
+.clip-meta-stack {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+
+.clip-meta-stack span:first-child {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.workflow-control input[type="file"] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 26, 23, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  font: inherit;
+}
+
+.workflow-control input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(209, 74, 31, 0.12);
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}

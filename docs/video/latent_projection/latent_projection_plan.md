@@ -162,3 +162,33 @@ The page now follows a strict order:
 4. press play to animate the latent forecast
 
 Changing the clip or the projection after loading marks the view as stale until the clip is loaded again. That avoids showing an old forecast as if it belonged to the new selection.
+
+## Local Uploads
+
+The browser page now supports a real local file upload.
+
+Workflow:
+
+1. choose a local video file in the upload control
+2. the browser POSTs it to `/api/latent/upload`
+3. the server stores the file under `logs/video_latent_projection/uploads`
+4. press `Load clip and project`
+5. the backend encodes the uploaded clip with the same frozen VideoMAE encoder and projects its latent trajectory
+
+This is the right interaction model for a research tool because it lets you inspect your own clip without changing the rest of the latent-analysis stack.
+
+The uploaded clip uses the same math as a dataset sample:
+
+$$
+T_c = 2\left\lceil \frac{\text{context-seconds} \cdot \text{sample-fps}}{2} \right\rceil,
+\qquad
+T_f = 2\left\lceil \frac{\text{future-seconds} \cdot \text{sample-fps}}{2} \right\rceil.
+$$
+
+The only difference is the source of the frames.
+The latent encoder, predictor, PCA/t-SNE projection, and metric computation are unchanged.
+
+## Browser API Notes
+
+The live browser demo serves uploaded clips through `/api/latent/upload/file/<upload_id>/<filename>` and analyzes them through `/api/latent/analyze?upload_id=...`.
+The original uploaded filename is preserved in the UI, while the server stores the file under a unique internal name to avoid collisions.

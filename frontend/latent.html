@@ -33,8 +33,12 @@
           <div>
             <p class="workflow-label">Choose a clip</p>
             <p class="workflow-copy">
-              Pick a sample from the dataset and load its latent trajectory.
+              Pick a dataset sample or upload your own local video.
             </p>
+            <label class="control-group workflow-control" for="uploadInput">
+              <span>Upload clip</span>
+              <input id="uploadInput" type="file" accept="video/*" />
+            </label>
             <label class="control-group workflow-control" for="exampleSelect">
               <span>Example clip</span>
               <select id="exampleSelect"></select>
@@ -81,7 +85,8 @@
               <p class="label">Query clip</p>
               <h2 id="clipTitle">Select a clip to begin</h2>
             </div>
-            <div class="meta">
+            <div class="meta clip-meta-stack">
+              <span id="clipSource">No clip loaded</span>
               <span id="clipMeta">No clip loaded</span>
               <span id="clipFrames">0 latent steps</span>
             </div>
@@ -180,7 +185,7 @@
         <div class="guide-grid">
           <article class="guide-card">
             <h3>1. Load a clip</h3>
-            <p>Pick a sample from the dropdown and press <strong>Load clip and project</strong>.</p>
+            <p>Pick a sample or upload a local video, then press <strong>Load clip and project</strong>.</p>
           </article>
           <article class="guide-card">
             <h3>2. Choose projection</h3>

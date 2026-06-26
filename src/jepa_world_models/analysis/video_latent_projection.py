@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from jepa_world_models.analysis.common import resolve_device
+from jepa_world_models.analysis.video_reconstruction import load_clip_from_video_path
 from jepa_world_models.analysis.video_world_model import (
     LatentSequenceBank,
     LatentWorldModelBundle,
@@ -17,6 +18,7 @@ from jepa_world_models.analysis.video_world_model import (
     _baseline_mean,
     _baseline_repeat_last,
     _latent_metrics,
+    _load_model,
     build_latent_sequence_bank,
 )
 
@@ -73,6 +75,7 @@ class LatentProjectionResult:
 class LatentProjectionEngine:
     bank: LatentSequenceBank
     predictor: TemporalLatentPredictor
+    encoder: Any
     bundle: LatentWorldModelBundle
     device: torch.device
     projection_seed: int
@@ -153,24 +156,22 @@ class LatentProjectionEngine:
         query_proj = self.pca.transform(query_features)
         return background_proj, query_proj
 
-    def analyze_index(
+    def _result_from_latents(
         self,
-        index: int,
         *,
-        projection_method: str = "pca",
-        background_sample_size: int = 512,
-        seed: int | None = None,
+        index: int,
+        sample_index: int,
+        video_id: str,
+        filename: str,
+        video_url: str,
+        context: torch.Tensor,
+        future_true: torch.Tensor,
+        future_pred: torch.Tensor,
+        projection_method: str,
+        background_sample_size: int,
+        seed: int,
+        source_split: str,
     ) -> LatentProjectionResult:
-        if not self.bank.sample_indices:
-            raise RuntimeError("Latent sequence bank is empty.")
-        index = max(0, min(index, len(self.bank.sample_indices) - 1))
-        seed = self.projection_seed if seed is None else seed
-
-        context = self.bank.context_latents[index].float()
-        future_true = self.bank.future_latents[index].float()
-        with torch.inference_mode():
-            future_pred = self.predictor(context.unsqueeze(0).to(self.device)).detach().cpu()[0].float()
-
         query_features = torch.cat([context, future_true, future_pred], dim=0).cpu().numpy()
         background_indices = self._sample_background_indices(background_sample_size, seed=seed + index)
 
@@ -239,11 +240,11 @@ class LatentProjectionEngine:
 
         query = {
             "index": int(index),
-            "sample_index": int(self.bank.sample_indices[index]),
-            "video_id": self.bank.video_ids[index],
-            "filename": f"{self.bank.video_ids[index]}.webm",
-            "video_url": f"/api/latent/file/{self.bank.video_ids[index]}.webm",
-            "source_split": self.bank.source_split,
+            "sample_index": int(sample_index),
+            "video_id": video_id,
+            "filename": filename,
+            "video_url": video_url,
+            "source_split": source_split,
             "context_frames": self.bank.context_frames,
             "future_frames": self.bank.future_frames,
             "total_frames": self.bank.total_frames,
@@ -251,6 +252,7 @@ class LatentProjectionEngine:
             "future_steps": self.bank.future_steps,
             "latent_dim": self.bank.latent_dim,
             "projection_method": method,
+            "source_kind": "upload" if source_split == "upload" else "dataset",
         }
 
         return LatentProjectionResult(
@@ -263,6 +265,74 @@ class LatentProjectionEngine:
             future_pred_trajectory=future_pred_trajectory,
             metrics=metrics,
             baseline_metrics=baseline_metrics,
+        )
+
+    def analyze_index(
+        self,
+        index: int,
+        *,
+        projection_method: str = "pca",
+        background_sample_size: int = 512,
+        seed: int | None = None,
+    ) -> LatentProjectionResult:
+        if not self.bank.sample_indices:
+            raise RuntimeError("Latent sequence bank is empty.")
+        index = max(0, min(index, len(self.bank.sample_indices) - 1))
+        seed = self.projection_seed if seed is None else seed
+
+        context = self.bank.context_latents[index].float()
+        future_true = self.bank.future_latents[index].float()
+        with torch.inference_mode():
+            future_pred = self.predictor(context.unsqueeze(0).to(self.device)).detach().cpu()[0].float()
+
+        return self._result_from_latents(
+            index=index,
+            sample_index=int(self.bank.sample_indices[index]),
+            video_id=self.bank.video_ids[index],
+            filename=f"{self.bank.video_ids[index]}.webm",
+            video_url=f"/api/latent/file/{self.bank.video_ids[index]}.webm",
+            context=context,
+            future_true=future_true,
+            future_pred=future_pred,
+            projection_method=projection_method,
+            background_sample_size=background_sample_size,
+            seed=seed,
+            source_split=self.bank.source_split,
+        )
+
+    def analyze_uploaded_path(
+        self,
+        video_path: str | Path,
+        *,
+        filename: str,
+        projection_method: str = "pca",
+        background_sample_size: int = 512,
+        seed: int | None = None,
+        video_id: str = "upload",
+    ) -> LatentProjectionResult:
+        seed = self.projection_seed if seed is None else seed
+        clip = load_clip_from_video_path(video_path, num_frames=self.total_frames, image_size=self.bundle.image_size)
+        context_frames = self.bundle.context_frames
+        context_clip = clip[:context_frames].unsqueeze(0).to(self.device)
+        future_clip = clip[context_frames:].unsqueeze(0).to(self.device)
+        with torch.inference_mode():
+            context = self.encoder.encoder.forward_sequence(context_clip).detach().cpu()[0].float()
+            future_true = self.encoder.encoder.forward_sequence(future_clip).detach().cpu()[0].float()
+            future_pred = self.predictor(context.unsqueeze(0).to(self.device)).detach().cpu()[0].float()
+
+        return self._result_from_latents(
+            index=0,
+            sample_index=-1,
+            video_id=video_id,
+            filename=filename,
+            video_url=f"/api/latent/upload/file/{video_id}/{Path(filename).name}",
+            context=context,
+            future_true=future_true,
+            future_pred=future_pred,
+            projection_method=projection_method,
+            background_sample_size=background_sample_size,
+            seed=seed,
+            source_split="upload",
         )
 
 
@@ -301,6 +371,7 @@ def build_latent_projection_engine(
     device: str | torch.device | None = None,
 ) -> LatentProjectionEngine:
     predictor, bundle = load_video_world_model(world_model_checkpoint, device=device)
+    encoder = _load_model(bundle.checkpoint_path, device=device)
     if (bundle.context_frames, bundle.future_frames, bundle.total_frames) != (context_frames, future_frames, total_frames):
         raise ValueError(
             "The projection view must use the same context/future frame counts as the world-model checkpoint."
@@ -328,6 +399,7 @@ def build_latent_projection_engine(
     return LatentProjectionEngine(
         bank=bank,
         predictor=predictor,
+        encoder=encoder,
         bundle=bundle,
         device=resolve_device(device),
         projection_seed=seed,
@@ -342,5 +414,12 @@ def save_latent_projection_report(path: str | Path, result: LatentProjectionResu
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result.to_json(), indent=2), encoding="utf-8")
     return str(path)
+
+
+
+
+
+
+
 
 

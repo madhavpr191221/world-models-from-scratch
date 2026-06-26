@@ -4,11 +4,13 @@
   currentStep: 0,
   projectionMethod: "pca",
   rafId: null,
-  isLoaded: false,
+  upload: null,
+  activeSource: "example",
 };
 
 const els = {
   exampleSelect: document.getElementById("exampleSelect"),
+  uploadInput: document.getElementById("uploadInput"),
   methodSelect: document.getElementById("methodSelect"),
   loadButton: document.getElementById("loadButton"),
   playButton: document.getElementById("playButton"),
@@ -16,6 +18,7 @@ const els = {
   stepForwardButton: document.getElementById("stepForwardButton"),
   statusPill: document.getElementById("statusPill"),
   clipTitle: document.getElementById("clipTitle"),
+  clipSource: document.getElementById("clipSource"),
   clipMeta: document.getElementById("clipMeta"),
   clipFrames: document.getElementById("clipFrames"),
   videoPlayer: document.getElementById("videoPlayer"),
@@ -61,8 +64,8 @@ function selectedMethod() {
   return els.methodSelect.value || "pca";
 }
 
-function fetchJson(url) {
-  return fetch(url).then((response) => {
+function fetchJson(url, options = {}) {
+  return fetch(url, options).then((response) => {
     if (!response.ok) {
       throw new Error(`Request failed: ${response.status}`);
     }
@@ -228,6 +231,7 @@ function renderHeader() {
   if (!state.analysis) return;
   const query = state.analysis.query;
   els.clipTitle.textContent = query.filename;
+  els.clipSource.textContent = query.source_kind === "upload" ? "Uploaded local clip" : "Dataset sample";
   els.clipMeta.textContent = query.video_id;
   els.clipFrames.textContent = `${query.context_steps + query.future_steps} latent steps`;
   els.projectionSummary.textContent = `${state.analysis.projection_method.toUpperCase()} · ${query.latent_dim}-D to 2-D`;
@@ -240,6 +244,7 @@ function renderHeader() {
 function renderPlaceholderState() {
   renderEmptyProjection();
   els.clipTitle.textContent = "Select a clip to begin";
+  els.clipSource.textContent = "No clip loaded";
   els.clipMeta.textContent = "No clip loaded";
   els.clipFrames.textContent = "0 latent steps";
   els.projectionSummary.textContent = "Awaiting clip";
@@ -316,12 +321,36 @@ async function loadExamples() {
   populateExamples(state.examples);
 }
 
+async function uploadClip(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  setStatus(`Uploading ${file.name}...`);
+  const payload = await fetchJson("/api/latent/upload", {
+    method: "POST",
+    body: formData,
+  });
+  state.upload = payload;
+  state.activeSource = "upload";
+  els.videoPlayer.src = payload.video_url;
+  els.videoPlayer.load();
+  els.clipTitle.textContent = payload.filename;
+  els.clipSource.textContent = "Uploaded local clip";
+  els.clipMeta.textContent = payload.upload_id;
+  els.clipFrames.textContent = "Ready to project";
+  setPlaybackEnabled(false);
+  renderEmptyProjection();
+  setStatus(`Uploaded ${file.name}. Press load to project.`);
+}
+
 async function loadAnalysis(index) {
   const method = selectedMethod();
   setStatus(`Loading ${method.toUpperCase()} projection...`);
-  const payload = await fetchJson(`/api/latent/analyze?index=${encodeURIComponent(index)}&method=${encodeURIComponent(method)}&background_sample_size=512&seed=0`);
+  const useUpload = state.activeSource === "upload" && state.upload;
+  const url = useUpload
+    ? `/api/latent/analyze?upload_id=${encodeURIComponent(state.upload.upload_id)}&method=${encodeURIComponent(method)}&background_sample_size=512&seed=0`
+    : `/api/latent/analyze?index=${encodeURIComponent(index)}&method=${encodeURIComponent(method)}&background_sample_size=512&seed=0`;
+  const payload = await fetchJson(url);
   state.analysis = payload;
-  state.isLoaded = true;
   renderHeader();
   renderMetrics();
   els.videoPlayer.src = payload.query.video_url;
@@ -348,12 +377,28 @@ async function init() {
   });
 
   els.exampleSelect.addEventListener("change", () => {
+    state.activeSource = "example";
     if (state.analysis) {
       setPlaybackEnabled(false);
       setStatus("Clip changed. Reload to update the map.");
       return;
     }
-    setStatus("Clip selected. Press load to project.");
+    setStatus("Dataset clip selected. Press load to project.");
+  });
+
+  els.uploadInput.addEventListener("change", async () => {
+    const file = els.uploadInput.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      await uploadClip(file);
+    } catch (error) {
+      console.error(error);
+      state.upload = null;
+      state.activeSource = "example";
+      setStatus(`Upload failed: ${error.message}`);
+    }
   });
 
   els.methodSelect.addEventListener("change", () => {
@@ -414,4 +459,3 @@ init().catch((error) => {
   els.phaseLabel.textContent = `Failed to load demo: ${error.message}`;
   els.explanationText.textContent = "The latent projection browser could not load its backend data.";
 });
-

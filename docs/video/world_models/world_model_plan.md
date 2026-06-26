@@ -1005,3 +1005,19 @@ $$
 $$
 
 The selected clip still keeps the full sequence so the page can draw the actual temporal path through latent space.
+
+## Local Clip Uploads
+
+The latent projection browser is not restricted to dataset samples.
+It can also accept a local video upload, store it temporarily on the server, and project the uploaded clip in the same latent space.
+
+That keeps the research workflow simple:
+
+- browse examples when you want a known baseline
+- upload a local clip when you want to inspect a new scene
+- keep the same encoder, predictor, and projection math in both cases
+
+## Latent Projection Serving Notes
+
+The latent browser server now supports local uploads in addition to dataset clips.
+The server stores uploads under `logs/video_latent_projection/uploads`, then reuses the frozen VideoMAE encoder and temporal predictor to analyze the uploaded clip in the same latent space as the dataset samples.
