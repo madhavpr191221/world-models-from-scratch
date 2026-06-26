@@ -1,0 +1,4 @@
+﻿# Generated experiment outputs live here.
+# Keep everything out of git except this file.
+*
+!.gitignore

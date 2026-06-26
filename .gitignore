@@ -1,4 +1,4 @@
-# Python-generated files
+﻿# Python-generated files
 __pycache__/
 *.py[oc]
 build/
@@ -16,7 +16,8 @@ augmentation_samples/
 
 # Training outputs
 checkpoints/
-logs/
+logs/*
+!logs/.gitignore
 
 # pytest cache
 .pytest_cache/

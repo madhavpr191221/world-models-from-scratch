@@ -407,6 +407,71 @@ $$
 
 and compare normalized predictions and targets.
 
+For a batch of predicted future latents
+
+$$
+\widehat{Z} \in \mathbb{R}^{B \times K \times D}
+$$
+
+and targets
+
+$$
+Z \in \mathbb{R}^{B \times K \times D},
+$$
+
+the implementation flattens the batch and horizon dimensions into vectors
+
+$$
+\widehat{\mathbf{u}}_i, \mathbf{u}_i \in \mathbb{R}^{D},
+\qquad i = 1, \ldots, BK.
+$$
+
+The logged metrics are then:
+
+$$
+\mathrm{latent\_mse}
+=
+\frac{1}{BKD}
+\sum_{i=1}^{BK}
+\left\|\widehat{\mathbf{u}}_i - \mathbf{u}_i\right\|^2,
+$$
+
+$$
+\mathrm{normalized\_latent\_mse}
+=
+\frac{1}{BKD}
+\sum_{i=1}^{BK}
+\left\|
+\frac{\widehat{\mathbf{u}}_i}{\|\widehat{\mathbf{u}}_i\|}
+-
+\frac{\mathbf{u}_i}{\|\mathbf{u}_i\|}
+\right\|^2,
+$$
+
+$$
+\mathrm{cosine\_similarity}
+=
+\frac{1}{BK}
+\sum_{i=1}^{BK}
+\frac{\widehat{\mathbf{u}}_i^\top \mathbf{u}_i}{\|\widehat{\mathbf{u}}_i\|\,\|\mathbf{u}_i\|}.
+$$
+
+So the cosine similarity is between the predicted latent vector and the true latent vector at the same future position, averaged over the whole batch and horizon.
+
+### Training Objective
+
+The model minimizes a mixed latent regression loss:
+
+$$
+\mathcal{L}
+=
+\underbrace{\mathrm{MSE}(\mathrm{normalize}(\widehat{Z}), \mathrm{normalize}(Z))}_{\text{direction matching}}
++
+0.1\,\underbrace{\mathrm{MSE}(\widehat{Z}, Z)}_{\text{magnitude matching}}.
+$$
+
+This objective says: first match the direction of the future latent vectors, then lightly penalize magnitude error as well. In practice, this is a simple regression objective in latent space, not a contrastive or probabilistic loss.
+
 ### Contrastive Alternative
 
 Another option is to treat the future latent as the positive example and other samples in the batch as negatives.
@@ -550,6 +615,20 @@ The evaluation should answer whether the latent world model is actually learning
 Report:
 
 - mean squared error in latent space
+- cosine similarity between the predicted future latent vector and the true future latent vector at the same horizon step
+- normalized prediction error after unit-normalizing each latent vector
+- decoded-frame quality checks
+
+The learned model is compared against simple baselines on the same target future block:
+
+- `repeat_last`: repeat the final observed latent vector across the future horizon
+- `mean_context`: repeat the mean of the observed context latents across the future horizon
+
+A learned model is only useful if it improves on these baselines in a stable way, especially on validation and test splits.
+
+Report:
+
+- mean squared error in latent space
 - cosine similarity
 - normalized prediction error
 - decoded-frame quality checks
@@ -652,6 +731,138 @@ uv run python scripts/run_video_world_model.py --checkpoint logs/videomae_large/
 ```
 
 If you want a gentler GPU smoke test, reduce `--subset-size` to `32` and `--batch-size` to `4`.
+
+
+### CLI Reference
+
+The training entrypoint is `scripts/run_video_world_model.py`. It converts the human-friendly time arguments into frame counts and then calls the latent world-model trainer.
+
+The conversion is:
+
+$$
+T_c = 2\left\lceil \frac{\mathrm{context\_seconds} \cdot \mathrm{sample\_fps}}{2} \right\rceil,
+\qquad
+T_f = 2\left\lceil \frac{\mathrm{future\_seconds} \cdot \mathrm{sample\_fps}}{2} \right\rceil,
+\qquad
+T = T_c + T_f.
+$$
+
+The code rounds to the nearest frame count, clamps to at least 2 frames, and then makes the result even so it is compatible with the tubelet size used by the encoder. In practice, each temporal block is encoded in chunks of `tubelet_size = 2` frames, so the number of temporal steps is:
+
+$$
+L = \frac{T}{2}.
+$$
+
+#### 1. Data and clip selection
+
+| Argument | Meaning | Why it matters |
+| --- | --- | --- |
+| `--checkpoint` | Path to the frozen VideoMAE checkpoint used as the encoder backbone. | This determines the latent space the dynamics model learns in. |
+| `--data-root` | Root directory containing the Something-Something V2 video files and labels. | The script samples real clips from this root. |
+| `--source-split` | Dataset split to sample from, usually `train`. | Controls which videos are used to build the latent bank. |
+| `--subset-size` | Number of usable videos to sample for the run. | Larger values give more diverse dynamics but increase encoding time and disk traffic. |
+| `--image-size` | Spatial resize target before encoding, usually `224`. | Spatial token count scales as \((\frac{\mathrm{image\_size}}{16})^2\), so larger images increase memory and compute. |
+
+The spatial token count matters because the encoder processes a token grid, not raw pixels. With `patch_size = 16`, the number of spatial tokens per temporal step is:
+
+$$
+N_s = \left(\frac{H}{16}\right)^2,
+$$
+
+where `H = image_size`. The full token count for one clip is then:
+
+$$
+N = L \cdot N_s = \frac{T}{2} \left(\frac{H}{16}\right)^2.
+$$
+
+That is the main reason larger `image-size`, longer `context-seconds`, and larger `sample-fps` all push memory up together.
+
+#### 2. Temporal window
+
+| Argument | Meaning | Why it matters |
+| --- | --- | --- |
+| `--context-seconds` | How many seconds of past video the model observes. | This is the conditioning history for the predictor. |
+| `--future-seconds` | How many seconds into the future the model must predict. | This is the horizon that becomes the target latent block. |
+| `--sample-fps` | Target sampling rate in frames per second. | This converts seconds into frame counts and sets the temporal resolution of the task. |
+
+The effective clip length is determined by these three values. For example, with `context-seconds = 5.0` and `sample-fps = 4.0`, the context window is approximately `20` frames, which becomes `20` after even-rounding. With `future-seconds = 1.5`, the future window becomes `6` frames. The total clip is therefore `26` frames, or `13` temporal steps after tubeletization.
+
+Higher `context-seconds` gives the predictor more history. Higher `future-seconds` makes the task harder because the model must infer farther into the latent future. Lower `sample-fps` reduces token count and memory, but it also discards motion detail.
+
+#### 3. Optimization and capacity
+
+| Argument | Meaning | Why it matters |
+| --- | --- | --- |
+| `--feature-batch-size` | Batch size used while extracting cached latent sequences with the frozen encoder. | This controls the memory footprint of the encoder/caching pass. |
+| `--batch-size` | Batch size used to train the temporal predictor on cached latents. | This controls the memory footprint of the learned dynamics model. |
+| `--epochs` | Number of passes over the latent training set. | More epochs mean more optimization steps over the same data. |
+| `--lr` | Learning rate for the predictor optimizer. | Too high can destabilize training; too low can stall improvement. |
+| `--hidden-dim` | Width of the predictor hidden state. | Larger width increases capacity and memory usage roughly linearly in the hidden dimension and quadratically in attention projections. |
+| `--num-layers` | Number of transformer encoder layers in the predictor. | More layers increase expressivity and cost. |
+| `--num-heads` | Number of attention heads. | More heads usually increase the model's ability to represent multiple temporal relations. |
+| `--dropout` | Dropout probability inside the predictor. | Helps regularize the temporal model when the dataset is small. |
+| `--seed` | Random seed for sampling and initialization. | Makes the split and training behavior repeatable. |
+
+`--feature-batch-size` and `--batch-size` are intentionally separate because they hit different stages of the pipeline.
+
+Let `B_f` be the feature batch size and `B_t` the training batch size.
+
+- `B_f` affects the encoder cache pass, where each batch is a set of raw video clips.
+- `B_t` affects the predictor pass, where each batch is a set of latent sequences.
+
+The encoder pass is heavier per sample because it touches video decoding, resizing, and the frozen backbone. The predictor pass is cheaper because it runs on cached tensors.
+
+#### 4. Storage and device
+
+| Argument | Meaning | Why it matters |
+| --- | --- | --- |
+| `--cache-dir` | Directory where latent sequence banks are stored. | Reusing the cache avoids re-encoding the same clips on later runs. |
+| `--output-dir` | Directory where checkpoints and reports are written. | This is the main artifact folder for the world-model run. |
+| `--device` | Explicit Torch device override, such as `cuda` or `cpu`. | Useful when you want to force CPU, select a GPU, or debug device placement. |
+| `--output` | JSON summary report path. | Contains the final metrics and run metadata. |
+
+The cache is important because it decouples the expensive video encoding stage from predictor training. If the cached latent bank already exists and the sample configuration has not changed, later runs can skip most of the raw video work.
+
+#### 5. Profiling
+
+| Argument | Meaning | Why it matters |
+| --- | --- | --- |
+| `--profile` | Wrap the training run in `torch.profiler`. | Captures CPU and GPU activity for the whole training job. |
+| `--profile-output-dir` | Directory for profiler artifacts. | Stores the Chrome trace and related outputs. |
+| `--profile-trace-name` | Chrome trace filename. | Lets you choose a stable trace name for repeated experiments. |
+| `--profile-table-sort-by` | Sort key for the printed profiler summary table. | `self_cuda_time_total` is useful on GPU; `self_cpu_time_total` is useful on CPU. |
+| `--profile-table-row-limit` | Number of profiler rows to print. | Keeps the terminal output manageable. |
+| `--profile-output` | JSON summary path for the profiling run. | Records the same run metadata in a compact machine-readable form. |
+
+Profiling adds overhead, so it is best used with a small epoch count and a moderate subset size. The profiler is most useful when you want to answer questions like:
+
+- where does the wall-clock time go
+- how much time is spent in video decoding versus model compute
+- which operators dominate CUDA time
+- whether the predictor or the data pipeline is the bottleneck
+
+#### 6. Typical settings
+
+For the current 8 GB GPU, a practical starting point is:
+
+- `--subset-size 64` for a smoke test
+- `--subset-size 500` for a mid-sized check
+- `--subset-size 2000` for a serious run
+- `--feature-batch-size 1`
+- `--batch-size 2` or `4`
+- `--context-seconds 5.0`
+- `--future-seconds 1.5`
+- `--sample-fps 4.0`
+
+The main scaling law is still the token count:
+
+$$
+N \approx \frac{T}{2} \left(\frac{\mathrm{image\_size}}{16}\right)^2,
+\qquad
+T \approx (\mathrm{context\_seconds} + \mathrm{future\_seconds}) \cdot \mathrm{sample\_fps}.
+$$
+
+This is approximate because the code rounds the frame counts to even numbers. Increasing time, FPS, or image size increases the latent sequence length and therefore increases both memory and runtime.
 
 ### Practical Scaling Table
 
@@ -756,6 +967,10 @@ A JEPA-style world model is more than a reconstruction model because it can supp
 - control
 
 This plan gets the repository onto that trajectory without overcommitting to a large architecture too early.
+
+
+
+
 
 
 

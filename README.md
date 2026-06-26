@@ -1,4 +1,4 @@
-# JEPA World Models
+﻿# JEPA World Models
 
 This repository is a working project for self-supervised vision, probing, and
 latent-space inspection. The current focus is not a full world model. It is:
@@ -67,19 +67,19 @@ artifacts instead of building parallel pipelines.
 ### Probing
 
 ```powershell
-uv run python scripts/run_probing.py --checkpoint checkpoints/vicreg/best.pt
+uv run python scripts/probing/run_probing.py --checkpoint checkpoints/vicreg/best.pt
 ```
 
 ### Static frontend
 
 ```powershell
-uv run python scripts/serve_frontend.py
+uv run python scripts/video/serve_frontend.py
 ```
 
 ### Retrieval demo
 
 ```powershell
-uv run python scripts/serve_retrieval_demo.py --checkpoint checkpoints/vicreg/best.pt
+uv run python scripts/probing/serve_retrieval_demo.py --checkpoint checkpoints/vicreg/best.pt
 ```
 
 ## What I Understand So Far
@@ -143,12 +143,13 @@ It is to test whether the frozen representation keeps temporal order.
 
 ### Planned/available scripts
 
-- `scripts/run_video_temporal_probe.py`
-- `scripts/run_video_dynamics.py`
-- `scripts/serve_video_demo.py`
+- `scripts/video/run_video_temporal_probe.py`
+- `scripts/video/run_video_dynamics.py`
+- `scripts/video/serve_video_demo.py`
 
 ### Planned docs
 
 - `docs/video/video_plan.md`
 - `docs/video/video_classification_thing.md`
 - `docs/video/frontend_implementation_plan.md`
+

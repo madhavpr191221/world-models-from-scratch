@@ -1,4 +1,4 @@
-# Video Plan
+﻿# Video Plan
 
 ## Goal
 
@@ -306,7 +306,7 @@ The pipeline is:
 
 The first training script should be:
 
-- `scripts/run_video_temporal_probe.py`
+- `scripts/video/run_video_temporal_probe.py`
 
 Suggested CLI:
 
@@ -658,3 +658,4 @@ The first run should confirm:
 - forward and reversed samples differ
 - the probe loss decreases
 - artifacts are saved to disk
+

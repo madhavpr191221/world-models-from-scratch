@@ -1,4 +1,4 @@
-# Video Reconstruction Demo Plan
+﻿# Video Reconstruction Demo Plan
 
 ## Summary
 
@@ -10,7 +10,7 @@ The demo shows:
 2. masked clip
 3. reconstructed clip
 
-The goal is a visible, explainable artifact that makes the model’s behavior easy to inspect.
+The goal is a visible, explainable artifact that makes the modelâ€™s behavior easy to inspect.
 
 ## Reconstruction Strategy
 
@@ -401,9 +401,9 @@ PSNR makes runs with different head settings easier to compare, but the videos r
 ## Entry Points
 
 - CLI demo:
-  - `uv run python scripts/run_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt --reconstruction-mode decoder --subset-size 512 --head-epochs 10`
+  - `uv run python scripts/video/run_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt --reconstruction-mode decoder --subset-size 512 --head-epochs 10`
 - Local UI server:
-  - `uv run python scripts/serve_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt --reconstruction-mode decoder --subset-size 512 --head-epochs 10`
+  - `uv run python scripts/video/serve_video_reconstruction.py --checkpoint logs/videomae_large/best_videomae.pt --reconstruction-mode decoder --subset-size 512 --head-epochs 10`
 
 The first run trains and caches the head. Later runs with the same settings load that cache.
 
@@ -419,4 +419,5 @@ The first run trains and caches the head. Later runs with the same settings load
 - reconstruction means masked reconstruction, not free-form generation
 - the first demo is decoder-first and frontend-visible
 - a separate browser-based UI is worth it because this is the first time the model will produce an obviously visual output
+
 

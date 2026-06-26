@@ -2,9 +2,19 @@
 
 import argparse
 import json
+import warnings
 from pathlib import Path
 
+import torch
+from torch.profiler import ProfilerActivity, profile, record_function
+
+from jepa_world_models.analysis.common import resolve_device
 from jepa_world_models.analysis.video_world_model import train_video_world_model
+warnings.filterwarnings(
+    "ignore",
+    message=r"enable_nested_tensor is True, but self\.use_nested_tensor is False because encoder_layer\.norm_first was True",
+    category=UserWarning,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,6 +60,41 @@ def build_parser() -> argparse.ArgumentParser:
         default="logs/video_world_model/result.json",
         help="Path to the JSON summary report.",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Collect a torch.profiler trace during the training run.",
+    )
+    parser.add_argument(
+        "--profile-output-dir",
+        type=str,
+        default="logs/video_world_model/profile",
+        help="Directory for profiler artifacts.",
+    )
+    parser.add_argument(
+        "--profile-trace-name",
+        type=str,
+        default="video_world_model_trace.json",
+        help="Filename for the exported Chrome trace.",
+    )
+    parser.add_argument(
+        "--profile-table-sort-by",
+        type=str,
+        default="self_cuda_time_total",
+        help="Profiler table column used for sorting.",
+    )
+    parser.add_argument(
+        "--profile-table-row-limit",
+        type=int,
+        default=30,
+        help="Maximum number of rows to print in the profiler table.",
+    )
+    parser.add_argument(
+        "--profile-output",
+        type=str,
+        default="logs/video_world_model/profile/profile_summary.json",
+        help="Path to a JSON summary of the profiler run.",
+    )
     return parser
 
 
@@ -58,8 +103,7 @@ def _seconds_to_frame_count(seconds: float, sample_fps: float) -> int:
     return frames + (frames % 2)
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def _run_training(args: argparse.Namespace):
     context_frames = _seconds_to_frame_count(args.context_seconds, args.sample_fps)
     future_frames = _seconds_to_frame_count(args.future_seconds, args.sample_fps)
     total_frames = context_frames + future_frames
@@ -86,8 +130,10 @@ def main() -> None:
         output_dir=args.output_dir,
         device=args.device,
     )
+    return result, context_frames, future_frames, total_frames
 
-    output = Path(args.output)
+
+def _print_summary(output: Path, args: argparse.Namespace, result, context_frames: int, future_frames: int, total_frames: int) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result.to_json(), indent=2), encoding="utf-8")
 
@@ -108,5 +154,69 @@ def main() -> None:
     print(f"predictions_path={result.predictions_path}")
 
 
+def _maybe_profile(args: argparse.Namespace, device_obj: torch.device):
+    activities = [ProfilerActivity.CPU]
+    if device_obj.type == "cuda" and torch.cuda.is_available():
+        activities.append(ProfilerActivity.CUDA)
+
+    profile_dir = Path(args.profile_output_dir)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    trace_path = profile_dir / args.profile_trace_name
+
+    with profile(
+        activities=activities,
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=False,
+    ) as prof:
+        with record_function("train_video_world_model"):
+            result, context_frames, future_frames, total_frames = _run_training(args)
+
+    sort_by = args.profile_table_sort_by
+    if sort_by.startswith("self_cuda") and ProfilerActivity.CUDA not in activities:
+        sort_by = "self_cpu_time_total"
+
+    prof.export_chrome_trace(str(trace_path))
+    print(prof.key_averages().table(sort_by=sort_by, row_limit=args.profile_table_row_limit))
+
+    profile_output = Path(args.profile_output)
+    profile_output.parent.mkdir(parents=True, exist_ok=True)
+    profile_summary = {
+        "checkpoint_path": result.checkpoint_path,
+        "trace_path": str(trace_path),
+        "sort_by": sort_by,
+        "context_seconds": args.context_seconds,
+        "future_seconds": args.future_seconds,
+        "sample_fps": args.sample_fps,
+        "derived_context_frames": context_frames,
+        "derived_future_frames": future_frames,
+        "derived_total_frames": total_frames,
+        "device": str(device_obj),
+        "train_loss": result.train_loss,
+        "val_loss": result.val_loss,
+        "test_loss": result.test_loss,
+    }
+    profile_output.write_text(json.dumps(profile_summary, indent=2), encoding="utf-8")
+    print(f"Trace written to {trace_path}")
+    print(f"Profile summary written to {profile_output}")
+    return result, context_frames, future_frames, total_frames
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    device_obj = resolve_device(args.device)
+
+    if args.profile:
+        result, context_frames, future_frames, total_frames = _maybe_profile(args, device_obj)
+    else:
+        result, context_frames, future_frames, total_frames = _run_training(args)
+
+    _print_summary(Path(args.output), args, result, context_frames, future_frames, total_frames)
+
+
 if __name__ == "__main__":
     main()
+
+
+
+

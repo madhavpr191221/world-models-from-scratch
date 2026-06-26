@@ -1,4 +1,4 @@
-# Frontend Implementation Plan
+﻿# Frontend Implementation Plan
 
 ## Goal
 
@@ -150,9 +150,9 @@ Expected files:
 
 Supporting scripts:
 
-- `scripts/serve_video_demo.py`
-- `scripts/run_video_dynamics.py`
-- `scripts/run_video_temporal_probe.py`
+- `scripts/video/serve_video_demo.py`
+- `scripts/video/run_video_dynamics.py`
+- `scripts/video/run_video_temporal_probe.py`
 
 ---
 
@@ -180,3 +180,4 @@ Once the probe artifacts are ready:
 5. show probe prediction
 
 That is enough for the first useful version.
+

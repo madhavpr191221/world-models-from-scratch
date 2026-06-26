@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 from dataclasses import asdict
 from pathlib import Path
 
@@ -122,7 +122,7 @@ def train_one_epoch(
 
     Logs every step's loss components to a CSV file (log_csv_path),
     appended across epochs, so the full training trajectory can be
-    plotted afterward with scripts/plot_loss_curves.py -- this is the
+    plotted afterward with scripts/dev/plot_loss_curves.py -- this is the
     primary diagnostic tool for catching collapse: L_var trending UP
     toward gamma and L_cov trending toward 0 simultaneously, even while
     L_total looks like it's improving, is the collapse signature.
@@ -380,3 +380,4 @@ def train(cfg: VICRegConfig, resume_from: str | None = None) -> None:
         )
         print(f"\nTraining complete. Final checkpoint: {final_path}")
         print(f"Best checkpoint (L_total={best_loss:.4f}): {cfg.checkpoint_dir}/best.pt")
+

@@ -560,13 +560,17 @@ def _run_epoch(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
+    *,
+    desc: str | None = None,
+    show_progress: bool = False,
 ) -> float:
     losses: list[float] = []
     is_train = optimizer is not None
     model.train(is_train)
     context = torch.enable_grad() if is_train else torch.no_grad()
+    iterator = tqdm(loader, desc=desc, leave=False) if show_progress else loader
     with context:
-        for batch in loader:
+        for batch in iterator:
             inputs = batch["context"].to(device)
             targets = batch["future"].to(device)
             if is_train:
@@ -578,6 +582,8 @@ def _run_epoch(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
             losses.append(float(loss.item()))
+            if show_progress and hasattr(iterator, "set_postfix"):
+                iterator.set_postfix(loss=f"{loss.item():.4g}")
     return float(np.mean(losses)) if losses else float("nan")
 
 
@@ -756,19 +762,17 @@ def train_video_world_model(
     best_epoch = 0
     best_state = {name: tensor.detach().cpu().clone() for name, tensor in model.state_dict().items()}
 
-    for epoch in range(epochs):
-        train_loss = _run_epoch(model, train_loader, optimizer, device_obj)
+    epoch_bar = tqdm(range(epochs), desc="latent world model epochs")
+    for epoch in epoch_bar:
+        train_loss = _run_epoch(model, train_loader, optimizer, device_obj, desc=f"train {epoch + 1}/{epochs}", show_progress=True)
         val_loss = _run_epoch(model, val_loader, None, device_obj)
+        epoch_bar.set_postfix(train=f"{train_loss:.6f}", val=f"{val_loss:.6f}")
         history.append(
             {
                 "epoch": float(epoch + 1),
                 "train_loss": float(train_loss),
                 "val_loss": float(val_loss),
             }
-        )
-        print(
-            f"latent world model epoch {epoch + 1}/{epochs}: "
-            f"train_loss={train_loss:.6f} val_loss={val_loss:.6f}"
         )
         if math.isfinite(val_loss) and val_loss < best_val:
             best_val = val_loss
@@ -844,6 +848,7 @@ def train_video_world_model(
     )
     _write_json(report_path, result.to_json())
     return result
+
 
 
 
