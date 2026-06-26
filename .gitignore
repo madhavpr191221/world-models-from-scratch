@@ -10,9 +10,9 @@ wheels/
 .venv
 
 # Data — never commit raw datasets (download via scripts, not git)
-data/
-data_raw/
-augmentation_samples/
+/data/
+/data_raw/
+/augmentation_samples/
 
 # Training outputs
 checkpoints/
