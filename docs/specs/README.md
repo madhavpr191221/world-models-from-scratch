@@ -31,9 +31,12 @@ Use the `spec-anchored` style:
 - `docs/specs/video/`: video-related specs
 - `docs/specs/vision/`: future vision/image specs
 - `docs/specs/research/`: broader research experiments
-- `docs/specs/video/strong_latent_dynamics_full_data.md`: full-scale latent dynamics training spec
+- `docs/specs/video/latent_dynamics_pipeline_spec.md`: full-scale latent dynamics training spec
+- `docs/specs/video/latent_dynamics_pipeline_plan.md`: implementation plan for the latent dynamics pipeline
 
 ## Current Rule
 
 If you are starting a new experiment, add a spec here first.
 If you are modifying an existing experiment, update the matching spec before or alongside the code.
+
+

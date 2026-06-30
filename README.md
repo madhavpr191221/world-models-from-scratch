@@ -1,174 +1,201 @@
-﻿# JEPA World Models
-
-This repository is a working project for self-supervised vision, probing, and
-latent-space inspection. The current focus is not a full world model. It is:
-
-- training and checking a VICReg-style vision encoder
-- probing the frozen representation with linear and low-shot classifiers
-- using nearest-neighbor retrieval to inspect the latent space
-- presenting the work through a simple research-facing frontend
-
-The codebase is set up so the analysis code, docs, and demo reuse the same
-artifacts instead of building parallel pipelines.
-
-## What Is Built
-
-### Model and training
-
-- A VICReg training path with a ViT-based encoder.
-- Training configuration and checkpoint loading for the current model setup.
-- Utility code for running the encoder and projector on the same data pipeline.
-
-### Probing and retrieval
-
-- Linear probe evaluation on frozen embeddings.
-- Low-shot probe evaluation for smaller labeled subsets.
-- k-NN retrieval on the frozen embedding space.
-- Feature-bank caching so probing and retrieval do not recompute embeddings on
-  every run.
-- Layerwise feature extraction for checking where semantics begin to appear.
-
-### Demo and frontend
-
-- A static, multi-page frontend for the project.
-- Pages for Home, Method, Results, and Demo.
-- A retrieval demo that accepts an uploaded image and returns nearest neighbors.
-- A backend endpoint that reuses the trained encoder and the cached retrieval
-  index.
-- A downloaded image corpus under `data/test_images` with a manifest so the
-  demo can show real filenames.
-
-### Downloads and data
-
-- A script for downloading class-balanced test images from Google Images using
-  SerpApi.
-- A manifest that records the saved file name, source URL, and query used for
-  each downloaded image.
-- STL-10 raw data already present under `data_raw`.
-
-### Documentation
-
-- A probing pipeline write-up.
-- A frontend architecture document.
-- A general world-model architecture document.
-- A separate video SSL planning document.
-
-## What The Repo Can Do Right Now
-
-1. Train or reload the current VICReg checkpoint.
-2. Run a probing suite on frozen embeddings.
-3. Cache retrieval indices for encoder or projector space.
-4. Serve a local frontend that explains the project.
-5. Accept an uploaded image and return nearest neighbors with filenames,
-   labels, thumbnails, and similarity scores.
-
-## How To Run
-
-### Probing
-
-```powershell
-uv run python scripts/probing/run_probing.py --checkpoint checkpoints/vicreg/best.pt
-```
-
-### Static frontend
-
-```powershell
-uv run python scripts/video/serve_frontend.py
-```
-
-### Retrieval demo
-
-```powershell
-uv run python scripts/probing/serve_retrieval_demo.py --checkpoint checkpoints/vicreg/best.pt
-```
-
-## What I Understand So Far
-
-The current project is about checking whether the learned representation is
-actually useful. The key idea is:
-
-- freeze the encoder
-- measure what the representation already contains
-- compare encoder space and projector space
-- inspect local neighborhood structure, not just one accuracy number
-
-That is why the repo has probing, retrieval, and a frontend that explains the
-method instead of hiding it behind a generic app.
-
-## BYOL
-
-BYOL is part of the learning background for this repo, but it is not currently
-implemented in code. It matters here as theory and comparison material:
-
-- it helps frame representation learning without negatives
-- it becomes more relevant later if the repo expands beyond VICReg into other
-  SSL variants
-- it is useful as a conceptual reference for future video SSL work
-
-## Going Forward
-
-The next direction is video SSL and latent dynamics.
-
-The plan is not to jump straight to a full world model. The next steps are:
-
-1. learn how SSL changes when the input becomes a clip instead of a still
-   image
-2. build a latent-dynamics probe on video
-3. make a small frontend that shows trajectories over time
-4. only then move toward rollout, future prediction, and action-conditioned
-   modeling
-
-That direction is documented in [docs/plans/video_plan.md](docs/plans/video_plan.md).
 # JEPA World Models
 
-This repo currently contains:
+This repository is a spec-driven research workspace for latent video world models.
 
-- a VICReg-style self-supervised image encoder
-- probing and retrieval utilities for STL-10
-- a frontend for image retrieval
-- a video latent-dynamics demo
-- a temporal probing plan for video
+The core question is simple:
 
-## Video Temporal Probe
+- given a short observed video context, can we predict future latent dynamics
+- and can we understand how that prediction fails when we roll it forward?
 
-The video path is now focused on a simple temporal diagnostic:
+That makes the repo about three things at once:
 
-- sample 32 frames from a short clip
-- encode frames with the frozen VICReg ViT
-- keep frame order
-- train a small classifier to predict forward vs reversed
+- video prediction in latent space
+- rollout error analysis and failure analysis
+- browser-based inspection of the learned dynamics
 
-The goal is not full video action recognition.
-It is to test whether the frozen representation keeps temporal order.
+The longer-term goal is a JEPA-style world model that is useful for future prediction, not just reconstruction.
 
-### Planned/available scripts
+## Current Thesis
 
-- `scripts/video/run_video_temporal_probe.py`
-- `scripts/video/run_video_dynamics.py`
-- `scripts/video/serve_video_demo.py`
+The project is centered on the idea that a useful world model should:
 
-### Planned docs
+- encode video into a latent trajectory
+- predict the future in that latent space
+- remain stable when rolled out autoregressively
+- beat trivial baselines such as repeat-last and mean-context
+- expose its behavior through a visual frontend and explicit error analysis
 
-- `docs/video/video_plan.md`
-- `docs/video/video_classification_thing.md`
-- `docs/video/frontend_implementation_plan.md`
+The emphasis is on understanding the model, not just training it.
 
+## What Lives Here
 
-## Latent Projection Browser
+### Latent video modeling
 
-The repo now includes a browser-hosted latent projection page.
+- frozen video encoder paths
+- temporal predictors over latent sequences
+- multi-step future prediction
+- rollout-based evaluation
+- latent-space baselines and metric reports
 
-Run it with:
+### Error analysis
+
+- teacher-forced vs rollout error
+- input sensitivity and compounding error analysis
+- per-horizon rollout error curves
+- mathematical notes on stability and sensitivity
+
+### Browser inspection
+
+- a local latent projection browser
+- dataset clip loading
+- local clip upload support
+- PCA and t-SNE projection views
+- context, true future, and predicted future trajectories
+
+### Spec-driven development
+
+- canonical specs under `docs/specs/`
+- detailed execution plans for major experiments
+- explicit acceptance criteria and test plans
+- theory notes that connect the math to the implementation
+
+## Repo Structure
+
+- `src/jepa_world_models/analysis/`: latent analysis, video world model logic, rollout inspection
+- `scripts/video/`: training, serving, and analysis entrypoints for video experiments
+- `frontend/`: local browser UI for latent projection and inspection
+- `docs/specs/`: canonical specs and experiment plans
+- `docs/video/`: video-oriented notes, plans, and theory documents
+- `logs/`: checkpoints, metrics, predictions, profiler traces, and browser artifacts
+
+## What The Repository Is For
+
+This repo is not trying to be a generic ML sandbox.
+It is meant to show a disciplined research workflow for video world models:
+
+1. write a spec
+2. implement the experiment
+3. train on video data
+4. analyze teacher-forced and rollout behavior
+5. inspect the latent dynamics in the browser
+6. iterate based on failure modes
+
+## Main Datasets
+
+The current latent-dynamics work is aimed at large-scale video corpora such as:
+
+- Something-Something V2
+- Kinetics-400
+
+Those datasets give two useful signals:
+
+- motion-heavy, action-conditioned dynamics
+- broad semantic and scene diversity
+
+## Key Documents
+
+- [Latent dynamics pipeline spec](docs/specs/video/latent_dynamics_pipeline_spec.md)
+- [Latent dynamics pipeline plan](docs/specs/video/latent_dynamics_pipeline_plan.md)
+- [Spec guide](docs/specs/README.md)
+- [Spec template](docs/specs/template.md)
+- [Rollout error analysis note](docs/video/rollout_error_analysis_latent_dynamics_markdown_edited.md)
+
+## Useful Commands
+
+### Small sanity retrain
 
 ```powershell
-uv run python scripts/video/serve_video_latent_projection.py --world-model-checkpoint logs/video_world_model/latent_world_model_best_videomae_1400170f03_train_2000_224_26_20_6.pt --data-root data --source-split train --subset-size 2000 --context-seconds 5.0 --future-seconds 1.5 --sample-fps 4.0 --feature-batch-size 1 --projection-method pca --host 127.0.0.1 --port 8002
+uv run python scripts/run_video_world_model.py `
+  --checkpoint logs/videomae_large/best_videomae.pt `
+  --data-root data `
+  --source-split train `
+  --subset-size 256 `
+  --context-seconds 4.0 `
+  --future-seconds 2.0 `
+  --sample-fps 4.0 `
+  --feature-batch-size 1 `
+  --batch-size 8 `
+  --epochs 3 `
+  --output-dir logs/video_world_model_sanity `
+  --cache-dir logs/video_world_model/cache `
+  --profile
 ```
 
-The companion analysis CLI is:
+### Medium retrain
 
 ```powershell
-uv run python scripts/video/run_video_latent_projection.py --world-model-checkpoint logs/video_world_model/latent_world_model_best_videomae_1400170f03_train_2000_224_26_20_6.pt --data-root data --source-split train --subset-size 2000 --context-seconds 5.0 --future-seconds 1.5 --sample-fps 4.0 --feature-batch-size 1 --projection-method pca
+uv run python scripts/run_video_world_model.py `
+  --checkpoint logs/videomae_large/best_videomae.pt `
+  --data-root data `
+  --source-split train `
+  --subset-size 2000 `
+  --context-seconds 4.0 `
+  --future-seconds 2.0 `
+  --sample-fps 4.0 `
+  --feature-batch-size 1 `
+  --batch-size 8 `
+  --epochs 10 `
+  --output-dir logs/video_world_model_medium `
+  --cache-dir logs/video_world_model/cache `
+  --profile
 ```
 
-These commands use the same time-to-frame conversion as the trainer.
-That keeps the browser view aligned with the world-model checkpoint.
+### Latent projection browser
+
+```powershell
+uv run python scripts/video/serve_video_latent_projection.py `
+  --world-model-checkpoint logs/video_world_model_medium/latent_world_model_best_videomae_1400170f03_train_2000_224_24_16_8.pt `
+  --data-root data `
+  --source-split train `
+  --subset-size 2000 `
+  --context-seconds 4.0 `
+  --future-seconds 2.0 `
+  --sample-fps 4.0 `
+  --feature-batch-size 1 `
+  --projection-method pca `
+  --host 127.0.0.1 `
+  --port 8002
+```
+
+## How To Read The Results
+
+When a run finishes, look at:
+
+- `train_loss`, `val_loss`, and `test_loss`
+- latent MSE and normalized latent MSE
+- cosine similarity
+- repeat-last and mean-context baselines
+- rollout curves and per-horizon behavior
+- the browser visualization of context vs true future vs predicted future
+
+A good run is not just low loss.
+It should also show that the model is learning more than a trivial continuation of the past.
+
+## Why This Repo Is Niche
+
+The niche is not just video prediction.
+It is:
+
+- latent video world models
+- explicit rollout error analysis
+- spec-driven experimentation
+- browser-hosted inspection
+- mathematically grounded failure analysis
+
+That combination makes the project more useful than a pile of checkpoints or notebooks.
+
+## Current Direction
+
+The immediate work is to improve latent dynamics prediction under rollout.
+The research path is:
+
+- train a stronger latent predictor
+- analyze teacher-forced vs rollout error
+- scale the training data
+- keep the browser as the inspection layer
+- use the results to guide the next model change
+
+That is the project story.
+
+
+
