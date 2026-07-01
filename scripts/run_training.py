@@ -1,5 +1,5 @@
-"""
-Real VICReg training run — entry point.
+﻿"""
+Real VICReg training run â€” entry point.
 
 Usage (from project root):
     uv run python scripts/run_training.py
@@ -13,7 +13,7 @@ Checkpoints saved to cfg.checkpoint_dir (default: checkpoints/vicreg/):
     final.pt                         -- always saved at the end
 
 Loss curves logged to cfg.log_dir/loss_log.csv as training runs --
-visualize anytime with scripts/plot_loss_curves.py (works mid-run too).
+visualize anytime with scripts/dev/plot_loss_curves.py (works mid-run too).
 """
 
 import argparse

@@ -1,0 +1,3 @@
+from __future__ import annotations
+
+from jepa_world_models.analysis.video_world_model_reporting import write_video_world_model_plots

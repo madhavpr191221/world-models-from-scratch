@@ -1,4 +1,4 @@
-# Project Architecture and World-Model Direction
+﻿# Project Architecture and World-Model Direction
 
 ## Overview
 
@@ -163,11 +163,11 @@ Relevant code:
 This repo is built for inspection, not just execution. The scripts are part of
 the architecture because they make failure modes visible.
 
-- `scripts/plot_loss_curves.py`: tracks whether training is healthy or
+- `scripts/dev/plot_loss_curves.py`: tracks whether training is healthy or
   collapsing
-- `scripts/diagnose_collapse.py`: fast iterative debug run on real data
-- `scripts/profile_throughput.py`: separates data-loading time from GPU compute
-- `scripts/visualize_augmentations.py`: confirms the two-view transform pipeline
+- `scripts/dev/diagnose_collapse.py`: fast iterative debug run on real data
+- `scripts/dev/profile_throughput.py`: separates data-loading time from GPU compute
+- `scripts/dev/visualize_augmentations.py`: confirms the two-view transform pipeline
 
 ## How The Pieces Fit Together
 
@@ -253,3 +253,4 @@ Target direction:
 - latent world modeling
 - predictive representation learning
 - eventually a system aligned with LeCun-style JEPA / world-model ideas
+

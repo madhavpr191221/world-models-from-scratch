@@ -1,4 +1,4 @@
-from jepa_world_models.analysis.common import (
+﻿from jepa_world_models.analysis.common import (
     FeatureBank,
     LayerwiseFeatureBank,
     LabeledSplits,
@@ -39,4 +39,19 @@ from jepa_world_models.analysis.video_temporal_probe import (
     expand_forward_reverse_samples,
     extract_source_clip_features,
     train_forward_reverse_probe,
+)
+from jepa_world_models.analysis.video_latent_projection import (
+    LatentProjectionEngine,
+    LatentProjectionExample,
+    LatentProjectionPoint,
+    LatentProjectionResult,
+    build_latent_projection_engine,
+    load_video_world_model,
+    save_latent_projection_report,
+)
+from jepa_world_models.analysis.video_world_model import (
+    LatentSequenceBank,
+    LatentWorldModelResult,
+    build_latent_sequence_bank,
+    train_video_world_model,
 )

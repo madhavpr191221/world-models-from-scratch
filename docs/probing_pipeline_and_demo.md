@@ -1,4 +1,4 @@
-# Probing Pipeline and Retrieval Demo
+﻿# Probing Pipeline and Retrieval Demo
 
 ## Overview
 
@@ -223,19 +223,19 @@ The probing run writes:
 Probe and cache embeddings:
 
 ```powershell
-uv run python scripts/run_probing.py --checkpoint checkpoints/vicreg/best.pt
+uv run python scripts/probing/run_probing.py --checkpoint checkpoints/vicreg/best.pt
 ```
 
 Force recomputation of cached embeddings:
 
 ```powershell
-uv run python scripts/run_probing.py --checkpoint checkpoints/vicreg/best.pt --refresh-cache
+uv run python scripts/probing/run_probing.py --checkpoint checkpoints/vicreg/best.pt --refresh-cache
 ```
 
 Launch the retrieval demo:
 
 ```powershell
-uv run python scripts/serve_retrieval_demo.py --checkpoint checkpoints/vicreg/best.pt
+uv run python scripts/probing/serve_retrieval_demo.py --checkpoint checkpoints/vicreg/best.pt
 ```
 
 ## Current Results
@@ -288,3 +288,4 @@ world model. But it is a good foundation for one:
 
 That is aligned with the broader direction of latent-space world modeling:
 learn useful internal state first, then build prediction and planning on top.
+
