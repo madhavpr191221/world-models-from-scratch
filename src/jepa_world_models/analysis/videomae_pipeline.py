@@ -65,7 +65,15 @@ def _first_existing(paths: Sequence[Path]) -> Path | None:
     return None
 
 
-def _resolve_video_root(data_root: Path) -> Path:
+def _resolve_video_root(data_root: Path, split: str | None = None) -> Path:
+    if split is not None:
+        split_candidates = [
+            data_root / "data_videos" / split,
+            data_root / "videos" / split,
+        ]
+        resolved_split = _first_existing(split_candidates)
+        if resolved_split is not None:
+            return resolved_split
     candidates = [
         data_root / "something_v2" / "20bn-something-something-v2",
         data_root / "20bn-something-something-v2",
@@ -171,8 +179,11 @@ class SomethingSomethingVideoDataset(Dataset):
         cache_dir: str | Path | None = None,
     ) -> None:
         self.data_root = Path(data_root)
-        self.video_root = _resolve_video_root(self.data_root)
-        self.labels_path = _resolve_labels_path(self.data_root, split)
+        self.split = split
+        self.video_root = _resolve_video_root(self.data_root, split)
+        self.labels_path = None
+        if self.video_root.name not in {"train", "validation", "test"}:
+            self.labels_path = _resolve_labels_path(self.data_root, split)
         self.image_size = image_size
         self.num_frames = num_frames
         self.rng = random.Random(seed)
@@ -182,7 +193,8 @@ class SomethingSomethingVideoDataset(Dataset):
     def _sample_cache_path(self, limit: int | None) -> Path | None:
         if self.cache_dir is None:
             return None
-        key = f"{self.labels_path.stem}_{self.image_size}_{self.num_frames}_{limit or 'all'}"
+        split_key = self.split if self.labels_path is None else self.labels_path.stem
+        key = f"{split_key}_{self.image_size}_{self.num_frames}_{limit or 'all'}"
         return self.cache_dir / "videomae_samples" / f"{key}.json"
 
     def _load_samples(self, limit: int | None) -> list[VideoSample]:
@@ -191,6 +203,18 @@ class SomethingSomethingVideoDataset(Dataset):
             payload = _load_json_file(cache_path)
             return [VideoSample(**item) for item in payload]
 
+        if self.video_root.name in {"train", "validation", "test"}:
+            samples: list[VideoSample] = []
+            for video_path in sorted(self.video_root.glob("*.webm")):
+                samples.append(VideoSample(video_id=video_path.stem, path=str(video_path), label=""))
+                if limit is not None and len(samples) >= limit:
+                    break
+            if cache_path is not None:
+                _write_json_file(cache_path, [sample.__dict__ for sample in samples])
+            return samples if limit is None else samples[:limit]
+
+        if self.labels_path is None:
+            raise FileNotFoundError(f"Could not find label metadata or split folder for split={self.split}.")
         metadata = _load_json(self.labels_path)
         samples: list[VideoSample] = []
         for item in metadata:
