@@ -427,6 +427,128 @@ class MambaStylePredictor(nn.Module):
         return torch.cat(outputs, dim=1)
 
 
+class OneLagMLPPredictor(nn.Module):
+    """A simple one-lag baseline that maps the latest latent to future latents."""
+
+    def __init__(
+        self,
+        latent_dim: int,
+        context_steps: int,
+        future_steps: int,
+        hidden_dim: int = 192,
+        num_layers: int = 3,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        del context_steps, num_heads
+        self.latent_dim = latent_dim
+        self.future_steps = future_steps
+        layers: list[nn.Module] = [nn.LayerNorm(latent_dim), nn.Linear(latent_dim, hidden_dim), nn.GELU()]
+        for _ in range(max(0, num_layers - 1)):
+            layers.extend([nn.Dropout(dropout), nn.Linear(hidden_dim, hidden_dim), nn.GELU()])
+        self.backbone = nn.Sequential(*layers)
+        self.output_head = nn.Linear(hidden_dim, future_steps * latent_dim)
+
+    def forward(self, context_latents: torch.Tensor) -> torch.Tensor:
+        if context_latents.ndim != 3:
+            raise ValueError(f"Expected context_latents with shape (B, C, D), got {tuple(context_latents.shape)}")
+        x = context_latents[:, -1, :]
+        x = self.backbone(x)
+        future = self.output_head(x)
+        return future.view(context_latents.shape[0], self.future_steps, self.latent_dim)
+
+
+class TemporalConvPredictor(nn.Module):
+    """A causal temporal convolution baseline over the latent context window."""
+
+    def __init__(
+        self,
+        latent_dim: int,
+        context_steps: int,
+        future_steps: int,
+        hidden_dim: int = 192,
+        num_layers: int = 4,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        del num_heads
+        self.latent_dim = latent_dim
+        self.context_steps = context_steps
+        self.future_steps = future_steps
+        self.input_norm = nn.LayerNorm(latent_dim)
+        self.input_proj = nn.Linear(latent_dim, hidden_dim)
+        self.layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        self.dropouts = nn.ModuleList()
+        dilation = 1
+        for _ in range(max(1, num_layers)):
+            self.layers.append(
+                nn.Conv1d(hidden_dim, hidden_dim, kernel_size=3, dilation=dilation)
+            )
+            self.norms.append(nn.LayerNorm(hidden_dim))
+            self.dropouts.append(nn.Dropout(dropout))
+            dilation *= 2
+        self.output_head = nn.Linear(hidden_dim, future_steps * latent_dim)
+
+    def forward(self, context_latents: torch.Tensor) -> torch.Tensor:
+        if context_latents.ndim != 3:
+            raise ValueError(f"Expected context_latents with shape (B, C, D), got {tuple(context_latents.shape)}")
+        x = self.input_proj(self.input_norm(context_latents)).transpose(1, 2)
+        for conv, norm, dropout in zip(self.layers, self.norms, self.dropouts):
+            padding = (conv.kernel_size[0] - 1) * conv.dilation[0]
+            x_pad = F.pad(x, (padding, 0))
+            x = conv(x_pad)
+            x = F.gelu(x)
+            x = dropout(x.transpose(1, 2)).transpose(1, 2)
+            x = norm(x.transpose(1, 2)).transpose(1, 2)
+        state = x[:, :, -1]
+        future = self.output_head(state)
+        return future.view(context_latents.shape[0], self.future_steps, self.latent_dim)
+
+
+class GRUPredictor(nn.Module):
+    """A recurrent baseline for temporal latent forecasting."""
+
+    def __init__(
+        self,
+        latent_dim: int,
+        context_steps: int,
+        future_steps: int,
+        hidden_dim: int = 192,
+        num_layers: int = 2,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        del num_heads
+        self.latent_dim = latent_dim
+        self.context_steps = context_steps
+        self.future_steps = future_steps
+        self.input_norm = nn.LayerNorm(latent_dim)
+        self.input_proj = nn.Linear(latent_dim, hidden_dim)
+        self.context_dropout = nn.Dropout(dropout)
+        self.encoder = nn.GRU(hidden_dim, hidden_dim, num_layers=max(1, num_layers), batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+        self.step_embed = nn.Parameter(torch.zeros(1, future_steps, hidden_dim))
+        self.decoder_cell = nn.GRUCell(hidden_dim, hidden_dim)
+        self.output_head = nn.Linear(hidden_dim, latent_dim)
+        nn.init.trunc_normal_(self.step_embed, std=0.02)
+
+    def forward(self, context_latents: torch.Tensor) -> torch.Tensor:
+        if context_latents.ndim != 3:
+            raise ValueError(f"Expected context_latents with shape (B, C, D), got {tuple(context_latents.shape)}")
+        x = self.context_dropout(self.input_proj(self.input_norm(context_latents)))
+        _, state = self.encoder(x)
+        hidden = state[-1]
+        outputs: list[torch.Tensor] = []
+        for step in range(self.future_steps):
+            step_token = self.step_embed[:, step, :].expand(context_latents.shape[0], -1)
+            hidden = self.decoder_cell(step_token, hidden)
+            outputs.append(self.output_head(hidden).unsqueeze(1))
+        return torch.cat(outputs, dim=1)
+
+
 @dataclass(slots=True)
 class EncoderSpec:
     name: str
@@ -456,8 +578,11 @@ ENCODER_REGISTRY = {
 }
 
 PREDICTOR_REGISTRY = {
+    "one_lag_mlp": OneLagMLPPredictor,
     "causal_transformer": CausalTransformerPredictor,
     "cross_attention": CrossAttentionPredictor,
+    "gru": GRUPredictor,
+    "tcn": TemporalConvPredictor,
     "mamba": MambaStylePredictor,
 }
 

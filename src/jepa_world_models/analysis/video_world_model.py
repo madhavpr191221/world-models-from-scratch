@@ -19,15 +19,12 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 
 from jepa_world_models.analysis.common import resolve_device
+from jepa_world_models.analysis.video_data import SomethingSomethingVideoDataset
 from jepa_world_models.analysis.video_latent_models import (
     EncoderSpec,
     PredictorSpec,
     build_temporal_predictor,
     build_video_encoder,
-)
-from jepa_world_models.analysis.videomae_pipeline import (
-    SomethingSomethingVideoDataset,
-    VideoMAEModel,
 )
 
 
@@ -170,6 +167,7 @@ class LatentWorldModelBundle:
     latent_dim: int
     hidden_dim: int
     context_steps: int
+    context_lag_steps: int
     future_steps: int
     num_layers: int
     num_heads: int
@@ -196,6 +194,7 @@ class LatentWorldModelBundle:
             "latent_dim": self.latent_dim,
             "hidden_dim": self.hidden_dim,
             "context_steps": self.context_steps,
+            "context_lag_steps": self.context_lag_steps,
             "future_steps": self.future_steps,
             "num_layers": self.num_layers,
             "num_heads": self.num_heads,
@@ -224,6 +223,7 @@ class LatentWorldModelBundle:
             latent_dim=int(payload["latent_dim"]),
             hidden_dim=int(payload["hidden_dim"]),
             context_steps=int(payload["context_steps"]),
+            context_lag_steps=int(payload.get("context_lag_steps", payload["context_steps"])),
             future_steps=int(payload["future_steps"]),
             num_layers=int(payload["num_layers"]),
             num_heads=int(payload["num_heads"]),
@@ -257,6 +257,7 @@ class LatentWorldModelResult:
     baseline_metrics: dict[str, dict[str, float]]
     baseline_verdict: dict[str, dict[str, object]]
     checkpoint_path: str
+    checkpoint_dir: str
     encoder_name: str
     predictor_name: str
     cache_path: str
@@ -265,6 +266,7 @@ class LatentWorldModelResult:
     predictions_path: str
     latent_shape: tuple[int, int, int]
     predictor_mode: str
+    context_lag_steps: int
     history: list[dict[str, float]]
     step_history: list[dict[str, float]]
     best_epoch: int
@@ -285,6 +287,7 @@ class LatentWorldModelResult:
             "baseline_metrics": self.baseline_metrics,
             "baseline_verdict": self.baseline_verdict,
             "checkpoint_path": self.checkpoint_path,
+            "checkpoint_dir": self.checkpoint_dir,
             "encoder_name": self.encoder_name,
             "predictor_name": self.predictor_name,
             "cache_path": self.cache_path,
@@ -293,6 +296,7 @@ class LatentWorldModelResult:
             "predictions_path": self.predictions_path,
             "latent_shape": list(self.latent_shape),
             "predictor_mode": self.predictor_mode,
+            "context_lag_steps": self.context_lag_steps,
             "history": self.history,
             "step_history": self.step_history,
             "best_epoch": self.best_epoch,
@@ -388,72 +392,6 @@ class LatentWindowDataset(Dataset):
         }
 
 
-class TemporalLatentPredictor(nn.Module):
-    def __init__(
-        self,
-        latent_dim: int,
-        context_steps: int,
-        future_steps: int,
-        hidden_dim: int = 128,
-        num_layers: int = 2,
-        num_heads: int = 4,
-        dropout: float = 0.1,
-    ) -> None:
-        super().__init__()
-        if context_steps <= 0 or future_steps <= 0:
-            raise ValueError("context_steps and future_steps must be positive.")
-        self.latent_dim = latent_dim
-        self.context_steps = context_steps
-        self.future_steps = future_steps
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        self.dropout = dropout
-
-        self.input_norm = nn.LayerNorm(latent_dim)
-        self.input_proj = nn.Linear(latent_dim, hidden_dim)
-        self.context_pos_embed = nn.Parameter(torch.zeros(1, context_steps, hidden_dim))
-        self.future_query = nn.Parameter(torch.zeros(1, future_steps, hidden_dim))
-        self.future_pos_embed = nn.Parameter(torch.zeros(1, future_steps, hidden_dim))
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=num_heads,
-            dim_feedforward=hidden_dim * 4,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
-        )
-        self.blocks = nn.TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
-        self.output_norm = nn.LayerNorm(hidden_dim)
-        self.output_head = nn.Linear(hidden_dim, latent_dim)
-        self._reset_parameters()
-
-    def _reset_parameters(self) -> None:
-        nn.init.trunc_normal_(self.context_pos_embed, std=0.02)
-        nn.init.trunc_normal_(self.future_query, std=0.02)
-        nn.init.trunc_normal_(self.future_pos_embed, std=0.02)
-
-    def forward(self, context_latents: torch.Tensor) -> torch.Tensor:
-        if context_latents.ndim != 3:
-            raise ValueError(f"Expected context_latents with shape (B, C, D), got {tuple(context_latents.shape)}")
-        if context_latents.shape[1] != self.context_steps:
-            raise ValueError(
-                f"Expected {self.context_steps} context steps, got {context_latents.shape[1]}"
-            )
-        if context_latents.shape[2] != self.latent_dim:
-            raise ValueError(f"Expected latent_dim={self.latent_dim}, got {context_latents.shape[2]}")
-
-        context_tokens = self.input_proj(self.input_norm(context_latents))
-        context_tokens = context_tokens + self.context_pos_embed
-        future_tokens = self.future_query.expand(context_latents.shape[0], -1, -1)
-        future_tokens = future_tokens + self.future_pos_embed
-        tokens = torch.cat([context_tokens, future_tokens], dim=1)
-        encoded = self.blocks(tokens)
-        future_encoded = encoded[:, -self.future_steps :, :]
-        return self.output_head(self.output_norm(future_encoded))
-
-
 def _checkpoint_fingerprint(checkpoint_path: str | Path) -> str:
     path = Path(checkpoint_path).resolve()
     stat = path.stat()
@@ -523,29 +461,19 @@ def _resolve_video_root(data_root: str | Path) -> Path:
 def _load_model(checkpoint_path: str | Path, device: str | torch.device | None = None) -> nn.Module:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint.get("config", {})
-    if "encoder_name" in config:
-        encoder = build_video_encoder(
-            EncoderSpec(
-                name=str(config.get("encoder_name", "")),
-                latent_dim=int(config.get("latent_dim", 192)),
-                tubelet_size=int(config.get("tubelet_size", 2)),
-                pretrained=bool(config.get("pretrained", False)),
-                variant=str(config.get("variant", "t")),
-            )
+    encoder = build_video_encoder(
+        EncoderSpec(
+            name=str(config.get("encoder_name", "")),
+            latent_dim=int(config.get("latent_dim", 192)),
+            tubelet_size=int(config.get("tubelet_size", 2)),
+            pretrained=bool(config.get("pretrained", False)),
+            variant=str(config.get("variant", "t")),
         )
-        encoder.load_state_dict(checkpoint["model_state"], strict=False)
-        encoder.eval()
-        device_obj = resolve_device(device)
-        return encoder.to(device_obj)
-    model = VideoMAEModel(
-        image_size=int(config.get("image_size", 224)),
-        num_frames=int(config.get("num_frames", 16)),
-        embed_dim=int(config.get("embed_dim", 192)),
     )
-    model.load_state_dict(checkpoint["model_state"], strict=False)
-    model.eval()
+    encoder.load_state_dict(checkpoint["model_state"], strict=False)
+    encoder.eval()
     device_obj = resolve_device(device)
-    return model.to(device_obj)
+    return encoder.to(device_obj)
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -695,7 +623,7 @@ def build_latent_sequence_bank(
             if not bank.sample_fps:
                 bank.sample_fps = sample_fps
             if not bank.encoder_name:
-                bank.encoder_name = str(torch.load(checkpoint_path, map_location="cpu", weights_only=False).get("config", {}).get("encoder_name", "videomae"))
+                bank.encoder_name = str(torch.load(checkpoint_path, map_location="cpu", weights_only=False).get("config", {}).get("encoder_name", ""))
             if not bank.encoder_fingerprint:
                 bank.encoder_fingerprint = _checkpoint_fingerprint(checkpoint_path)
             if not bank.created_at:
@@ -721,7 +649,7 @@ def build_latent_sequence_bank(
     model = _load_model(checkpoint_path, device=device)
     model_device = next(model.parameters()).device
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    encoder_name = str(checkpoint.get("config", {}).get("encoder_name", "videomae"))
+    encoder_name = str(checkpoint.get("config", {}).get("encoder_name", ""))
 
     loader_kwargs = {
         "batch_size": batch_size,
@@ -816,13 +744,36 @@ def _latent_loss_components(pred: torch.Tensor, target: torch.Tensor) -> dict[st
     }
 
 
-def _select_context_mode(context_latents: torch.Tensor, predictor_mode: str) -> torch.Tensor:
-    mode = predictor_mode.strip().lower()
-    if mode == "one-lag":
-        return context_latents[:, -1:, :].contiguous()
-    if mode in {"context", "multi-context", "multi"}:
-        return context_latents
-    raise ValueError(f"Unsupported predictor_mode: {predictor_mode}")
+def _resolve_context_lag_steps(
+    context_steps: int,
+    *,
+    predictor_mode: str,
+    context_lag_steps: int | None,
+) -> int:
+    if context_lag_steps is None:
+        mode = predictor_mode.strip().lower()
+        if mode == "one-lag":
+            return 1
+        if mode in {"context", "multi-context", "multi"}:
+            return context_steps
+        raise ValueError(f"Unsupported predictor_mode: {predictor_mode}")
+    if context_lag_steps <= 0:
+        raise ValueError("context_lag_steps must be positive.")
+    if context_lag_steps > context_steps:
+        raise ValueError(
+            f"context_lag_steps={context_lag_steps} cannot exceed available context_steps={context_steps}."
+        )
+    return context_lag_steps
+
+
+def _select_context_window(context_latents: torch.Tensor, context_lag_steps: int) -> torch.Tensor:
+    if context_lag_steps <= 0:
+        raise ValueError("context_lag_steps must be positive.")
+    if context_lag_steps > context_latents.shape[1]:
+        raise ValueError(
+            f"context_lag_steps={context_lag_steps} cannot exceed the available context window {context_latents.shape[1]}."
+        )
+    return context_latents[:, -context_lag_steps:, :].contiguous()
 
 
 def _make_loader(dataset: Dataset, batch_size: int, shuffle: bool, num_workers: int = 4) -> DataLoader:
@@ -835,7 +786,7 @@ def _make_loader(dataset: Dataset, batch_size: int, shuffle: bool, num_workers: 
 
 
 def _run_epoch(
-    model: TemporalLatentPredictor,
+    model: nn.Module,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
@@ -875,6 +826,9 @@ def _run_epoch(
                     "mse_loss": float(loss_components["mse_loss"].item()),
                     "normalized_mse_loss": float(loss_components["normalized_mse_loss"].item()),
                     "cosine_loss": float(loss_components["cosine_loss"].item()),
+                    "latent_mse": float(loss_components["mse_loss"].item()),
+                    "normalized_latent_mse": float(loss_components["normalized_mse_loss"].item()),
+                    "cosine_similarity": float(1.0 - loss_components["cosine_loss"].item()),
                 }
                 if epoch_index is not None:
                     record["epoch"] = float(epoch_index)
@@ -895,7 +849,7 @@ def _run_epoch(
 
 @torch.inference_mode()
 def _evaluate_dataset(
-    model: TemporalLatentPredictor,
+    model: nn.Module,
     dataset: LatentWindowDataset,
     device: torch.device,
 ) -> tuple[dict[str, float], dict[str, float], list[dict[str, float]]]:
@@ -1034,6 +988,7 @@ def train_video_world_model(
     dropout: float = 0.1,
     predictor_name: str = "causal_transformer",
     predictor_mode: str = "context",
+    context_lag_steps: int | None = None,
     seed: int = 0,
     cache_dir: str | Path | None = "logs/video_world_model/cache",
     output_dir: str | Path = "logs/video_world_model",
@@ -1115,7 +1070,13 @@ def train_video_world_model(
             device=device,
         )
 
-    train_context_latents = _select_context_mode(bank.context_latents, predictor_mode)
+    resolved_context_lag_steps = _resolve_context_lag_steps(
+        bank.context_steps,
+        predictor_mode=predictor_mode,
+        context_lag_steps=context_lag_steps,
+    )
+
+    train_context_latents = _select_context_window(bank.context_latents, resolved_context_lag_steps)
     train_dataset = LatentWindowDataset(
         train_context_latents,
         bank.future_latents,
@@ -1124,7 +1085,7 @@ def train_video_world_model(
     )
 
     if validation_bank is not None:
-        val_context_latents = _select_context_mode(validation_bank.context_latents, predictor_mode)
+        val_context_latents = _select_context_window(validation_bank.context_latents, resolved_context_lag_steps)
         val_dataset = LatentWindowDataset(
             val_context_latents,
             validation_bank.future_latents,
@@ -1142,7 +1103,7 @@ def train_video_world_model(
         )
 
     if test_bank is not None:
-        test_context_latents = _select_context_mode(test_bank.context_latents, predictor_mode)
+        test_context_latents = _select_context_window(test_bank.context_latents, resolved_context_lag_steps)
         test_dataset = LatentWindowDataset(
             test_context_latents,
             test_bank.future_latents,
@@ -1163,7 +1124,7 @@ def train_video_world_model(
 
     encoder_checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     encoder_config = encoder_checkpoint.get("config", {})
-    encoder_name = str(encoder_config.get("encoder_name", "videomae"))
+    encoder_name = str(encoder_config.get("encoder_name", ""))
 
     model = build_temporal_predictor(
         PredictorSpec(
@@ -1214,10 +1175,16 @@ def train_video_world_model(
                 "train_mse_loss": float(train_result.mse_loss),
                 "train_normalized_mse_loss": float(train_result.normalized_mse_loss),
                 "train_cosine_loss": float(train_result.cosine_loss),
+                "train_latent_mse": float(train_result.mse_loss),
+                "train_normalized_latent_mse": float(train_result.normalized_mse_loss),
+                "train_cosine_similarity": float(1.0 - train_result.cosine_loss),
                 "val_loss": float(val_result.loss),
                 "val_mse_loss": float(val_result.mse_loss),
                 "val_normalized_mse_loss": float(val_result.normalized_mse_loss),
                 "val_cosine_loss": float(val_result.cosine_loss),
+                "val_latent_mse": float(val_result.mse_loss),
+                "val_normalized_latent_mse": float(val_result.normalized_mse_loss),
+                "val_cosine_similarity": float(1.0 - val_result.cosine_loss),
             }
         )
         step_history.extend(train_result.step_history)
@@ -1232,6 +1199,7 @@ def train_video_world_model(
             latent_dim=bank.latent_dim,
             hidden_dim=hidden_dim,
             context_steps=context_latents.shape[1],
+            context_lag_steps=resolved_context_lag_steps,
             future_steps=bank.future_steps,
             num_layers=num_layers,
             num_heads=num_heads,
@@ -1281,6 +1249,7 @@ def train_video_world_model(
         latent_dim=bank.latent_dim,
         hidden_dim=hidden_dim,
         context_steps=context_latents.shape[1],
+        context_lag_steps=resolved_context_lag_steps,
         future_steps=bank.future_steps,
         num_layers=num_layers,
         num_heads=num_heads,
@@ -1316,6 +1285,7 @@ def train_video_world_model(
         baseline_metrics=baseline_metrics,
         baseline_verdict=baseline_verdict,
         checkpoint_path=str(checkpoint_file),
+        checkpoint_dir=str(checkpoint_dir),
         encoder_name=encoder_name,
         predictor_name=predictor_name,
         cache_path=str(cache_path) if cache_path is not None else "",
@@ -1324,6 +1294,7 @@ def train_video_world_model(
         predictions_path=str(predictions_path),
         latent_shape=(context_latents.shape[1], bank.future_steps, bank.latent_dim),
         predictor_mode=predictor_mode,
+        context_lag_steps=resolved_context_lag_steps,
         history=history,
         step_history=step_history,
         best_epoch=best_epoch,

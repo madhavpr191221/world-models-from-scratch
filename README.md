@@ -94,8 +94,8 @@ Those datasets give two useful signals:
 
 ## Key Documents
 
-- [Latent dynamics pipeline spec](docs/specs/video/latent_dynamics_pipeline_spec.md)
-- [Latent dynamics pipeline plan](docs/specs/video/latent_dynamics_pipeline_plan.md)
+- [Video spec index](docs/specs/video/README.md)
+- [Improving Temporal Predictor](docs/specs/video/2026-07-01-improving-temporal-predictor/README.md)
 - [Spec guide](docs/specs/README.md)
 - [Spec template](docs/specs/template.md)
 - [Rollout error analysis note](docs/video/rollout_error_analysis_latent_dynamics_markdown_edited.md)
@@ -106,7 +106,7 @@ Those datasets give two useful signals:
 
 ```powershell
 uv run python scripts/run_video_world_model.py `
-  --checkpoint logs/videomae_large/best_videomae.pt `
+  --checkpoint logs/encoder_checkpoints/encoder_swin_pretrained.pt `
   --data-root data `
   --source-split train `
   --subset-size 256 `
@@ -125,7 +125,7 @@ uv run python scripts/run_video_world_model.py `
 
 ```powershell
 uv run python scripts/run_video_world_model.py `
-  --checkpoint logs/videomae_large/best_videomae.pt `
+  --checkpoint logs/encoder_checkpoints/encoder_swin_pretrained.pt `
   --data-root data `
   --source-split train `
   --subset-size 2000 `
@@ -144,7 +144,7 @@ uv run python scripts/run_video_world_model.py `
 
 ```powershell
 uv run python scripts/video/serve_video_latent_projection.py `
-  --world-model-checkpoint logs/video_world_model_medium/latent_world_model_best_videomae_1400170f03_train_2000_224_24_16_8.pt `
+  --world-model-checkpoint logs/video_world_model_medium/decoder_causal_transformer.pt `
   --data-root data `
   --source-split train `
   --subset-size 2000 `

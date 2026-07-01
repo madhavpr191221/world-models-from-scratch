@@ -117,7 +117,7 @@ def main() -> None:
                 return _serve_file(self, frontend_root / "latent.js")
             if route == "/video.css":
                 return _serve_file(self, frontend_root / "video.css")
-            if route in {"/video.html", "/method.html", "/results.html", "/styles.css", "/app.js", "/demo.html", "/reconstruction.html", "/reconstruction.css", "/reconstruction.js"}:
+            if route in {"/video.html", "/method.html", "/results.html", "/styles.css", "/app.js", "/demo.html"}:
                 return _serve_file(self, frontend_root / route.lstrip("/"))
 
             if route == "/api/latent/examples":

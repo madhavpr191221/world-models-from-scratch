@@ -2,10 +2,19 @@
 
 This folder is the active source of truth for the video latent-dynamics work.
 
-## Canonical Docs
+The project-level constitution lives in:
 
-- [Latent Video Dynamics Spec](./latent_dynamics_pipeline_spec.md)
-- [Latent Video Dynamics Implementation Plan](./latent_dynamics_pipeline_plan.md)
+- `docs/specs/constitution/README.md`
+- `docs/specs/constitution/mission.md`
+- `docs/specs/constitution/tech-stack.md`
+- `docs/specs/constitution/roadmap.md`
+
+## Active Feature
+
+- [Improving Temporal Predictor](./2026-07-01-improving-temporal-predictor/README.md)
+- [Feature Spec](./2026-07-01-improving-temporal-predictor/requirements.md)
+- [Feature Plan](./2026-07-01-improving-temporal-predictor/plan.md)
+- [Validation](./2026-07-01-improving-temporal-predictor/validation.md)
 
 ## Canonical Runtime Contract
 
@@ -27,4 +36,3 @@ Primary outputs for a run:
 - `plots/rollout_validation.png`
 
 If a file or script is not part of this flow, it should be treated as legacy until explicitly promoted into the spec.
-

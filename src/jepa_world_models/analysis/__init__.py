@@ -52,7 +52,6 @@ from jepa_world_models.analysis.video_latent_projection import (
 from jepa_world_models.analysis.video_world_model import (
     LatentSequenceBank,
     LatentWorldModelResult,
-    TemporalLatentPredictor,
     build_latent_sequence_bank,
     train_video_world_model,
 )

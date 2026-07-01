@@ -7,22 +7,26 @@ import math
 import torch
 
 from jepa_world_models.analysis.video_world_model import (
-    TemporalLatentPredictor,
+    PredictorSpec,
+    build_temporal_predictor,
     _latent_metrics,
     _split_indices,
 )
 
 
-def test_temporal_latent_predictor_returns_future_sequence() -> None:
+def test_temporal_predictor_returns_future_sequence() -> None:
     torch.manual_seed(0)
-    model = TemporalLatentPredictor(
-        latent_dim=192,
-        context_steps=6,
-        future_steps=2,
-        hidden_dim=64,
-        num_layers=2,
-        num_heads=4,
-        dropout=0.0,
+    model = build_temporal_predictor(
+        PredictorSpec(
+            name="causal_transformer",
+            latent_dim=192,
+            context_steps=6,
+            future_steps=2,
+            hidden_dim=64,
+            num_layers=2,
+            num_heads=4,
+            dropout=0.0,
+        )
     )
     x = torch.randn(3, 6, 192)
     y = model(x)

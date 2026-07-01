@@ -6,15 +6,16 @@ from typing import Any
 
 import numpy as np
 import torch
+from torch import nn
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from jepa_world_models.analysis.common import resolve_device
-from jepa_world_models.analysis.video_reconstruction import load_clip_from_video_path
+from jepa_world_models.analysis.video_data import load_clip_from_video_path
+from jepa_world_models.analysis.video_latent_models import PredictorSpec, build_temporal_predictor
 from jepa_world_models.analysis.video_world_model import (
     LatentSequenceBank,
     LatentWorldModelBundle,
-    TemporalLatentPredictor,
     _baseline_mean,
     _baseline_repeat_last,
     _latent_metrics,
@@ -74,7 +75,7 @@ class LatentProjectionResult:
 @dataclass(slots=True)
 class LatentProjectionEngine:
     bank: LatentSequenceBank
-    predictor: TemporalLatentPredictor
+    predictor: nn.Module
     encoder: Any
     bundle: LatentWorldModelBundle
     device: torch.device
@@ -281,6 +282,7 @@ class LatentProjectionEngine:
         seed = self.projection_seed if seed is None else seed
 
         context = self.bank.context_latents[index].float()
+        context = context[-self.bundle.context_lag_steps :].contiguous()
         future_true = self.bank.future_latents[index].float()
         with torch.inference_mode():
             future_pred = self.predictor(context.unsqueeze(0).to(self.device)).detach().cpu()[0].float()
@@ -317,6 +319,7 @@ class LatentProjectionEngine:
         future_clip = clip[context_frames:].unsqueeze(0).to(self.device)
         with torch.inference_mode():
             context = self.encoder.encoder.forward_sequence(context_clip).detach().cpu()[0].float()
+            context = context[-self.bundle.context_lag_steps :].contiguous()
             future_true = self.encoder.encoder.forward_sequence(future_clip).detach().cpu()[0].float()
             future_pred = self.predictor(context.unsqueeze(0).to(self.device)).detach().cpu()[0].float()
 
@@ -336,17 +339,20 @@ class LatentProjectionEngine:
         )
 
 
-def load_video_world_model(checkpoint_path: str | Path, device: str | torch.device | None = None) -> tuple[TemporalLatentPredictor, LatentWorldModelBundle]:
+def load_video_world_model(checkpoint_path: str | Path, device: str | torch.device | None = None) -> tuple[nn.Module, LatentWorldModelBundle]:
     payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     bundle = LatentWorldModelBundle.from_payload(payload)
-    model = TemporalLatentPredictor(
-        latent_dim=bundle.latent_dim,
-        context_steps=bundle.context_steps,
-        future_steps=bundle.future_steps,
-        hidden_dim=bundle.hidden_dim,
-        num_layers=bundle.num_layers,
-        num_heads=bundle.num_heads,
-        dropout=bundle.dropout,
+    model = build_temporal_predictor(
+        PredictorSpec(
+            name=bundle.predictor_name or "causal_transformer",
+            latent_dim=bundle.latent_dim,
+            context_steps=bundle.context_steps,
+            future_steps=bundle.future_steps,
+            hidden_dim=bundle.hidden_dim,
+            num_layers=bundle.num_layers,
+            num_heads=bundle.num_heads,
+            dropout=bundle.dropout,
+        )
     )
     model.load_state_dict(bundle.state_dict)
     device_obj = resolve_device(device)

@@ -94,6 +94,7 @@ def main() -> None:
     print(f"latent_dim={payload['latent_dim']}")
     print(f"device={payload['device']}")
     print(f"predictor_mode={payload['predictor_mode']}")
+    print(f"context_lag_steps={payload['context_lag_steps']}")
     print(f"rollout_validation_plot={plot_paths['rollout_validation']}")
     print(f"rollout_spectrum_plot={plot_paths['rollout_spectrum']}")
 

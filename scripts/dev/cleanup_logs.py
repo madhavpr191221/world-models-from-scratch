@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--keep",
         nargs="*",
-        default=["videomae_large", "video_world_model"],
+        default=["encoder_checkpoints"],
         help="Directory names to keep under the logs root.",
     )
     parser.add_argument(

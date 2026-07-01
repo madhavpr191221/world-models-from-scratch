@@ -25,7 +25,7 @@ warnings.filterwarnings(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train a JEPA-style latent video world model.")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to the frozen VideoMAE checkpoint.")
+    parser.add_argument("--checkpoint", type=str, required=True, help="Path to the frozen encoder checkpoint.")
     parser.add_argument("--data-root", type=str, default="data", help="Data root containing Something-Something V2.")
     parser.add_argument("--source-split", type=str, default="train", help="Source split used to sample videos.")
     parser.add_argument(
@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--predictor-name",
         type=str,
         default="causal_transformer",
-        choices=("causal_transformer", "mamba", "cross_attention"),
+        choices=("one_lag_mlp", "causal_transformer", "gru", "tcn", "mamba", "cross_attention"),
         help="Temporal predictor family to train.",
     )
     parser.add_argument(
@@ -77,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="context",
         choices=("context", "one-lag"),
         help="Temporal predictor mode: multi-context or single-lag autoregression.",
+    )
+    parser.add_argument(
+        "--context-lag-steps",
+        type=int,
+        default=None,
+        help="Number of recent latent steps fed into the predictor. Omit to use the full context or one lag based on predictor mode.",
     )
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
     parser.add_argument(
@@ -95,8 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=str,
-        default="logs/video_world_model/result.json",
-        help="Path to the JSON summary report.",
+        default=None,
+        help="Path to the JSON summary report. Defaults to <output-dir>/result.json.",
     )
     parser.add_argument(
         "--skip-plots",
@@ -128,8 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile-output-dir",
         type=str,
-        default="logs/video_world_model/profile",
-        help="Directory for profiler artifacts.",
+        default=None,
+        help="Directory for profiler artifacts. Defaults to <output-dir>/profile.",
     )
     parser.add_argument(
         "--profile-trace-name",
@@ -152,8 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile-output",
         type=str,
-        default="logs/video_world_model/profile/profile_summary.json",
-        help="Path to a JSON summary of the profiler run.",
+        default=None,
+        help="Path to a JSON summary of the profiler run. Defaults to <output-dir>/profile/profile_summary.json.",
     )
     return parser
 
@@ -191,6 +197,7 @@ def _run_training(args: argparse.Namespace):
         dropout=args.dropout,
         predictor_name=args.predictor_name,
         predictor_mode=args.predictor_mode,
+        context_lag_steps=args.context_lag_steps,
         seed=args.seed,
         cache_dir=args.cache_dir,
         output_dir=args.output_dir,
@@ -222,6 +229,7 @@ def _write_summary(output: Path, args: argparse.Namespace, result, context_frame
     print(f"cache_path={result.cache_path}")
     print(f"cache_manifest_path={result.cache_manifest_path}")
     print(f"predictor_mode={result.predictor_mode}")
+    print(f"context_lag_steps={result.context_lag_steps}")
     print(f"context_seconds={args.context_seconds:g}")
     print(f"future_seconds={args.future_seconds:g}")
     print(f"sample_fps={args.sample_fps:g}")
@@ -236,7 +244,7 @@ def _run_profiled_training(args: argparse.Namespace, device_obj: torch.device):
     if device_obj.type == "cuda" and torch.cuda.is_available():
         activities.append(ProfilerActivity.CUDA)
 
-    profile_dir = Path(args.profile_output_dir)
+    profile_dir = Path(args.profile_output_dir) if args.profile_output_dir is not None else Path(args.output_dir) / "profile"
     profile_dir.mkdir(parents=True, exist_ok=True)
     trace_path = profile_dir / args.profile_trace_name
 
@@ -256,7 +264,7 @@ def _run_profiled_training(args: argparse.Namespace, device_obj: torch.device):
     prof.export_chrome_trace(str(trace_path))
     print(prof.key_averages().table(sort_by=sort_by, row_limit=args.profile_table_row_limit))
 
-    profile_output = Path(args.profile_output)
+    profile_output = Path(args.profile_output) if args.profile_output is not None else profile_dir / "profile_summary.json"
     profile_output.parent.mkdir(parents=True, exist_ok=True)
     profile_summary = {
         "checkpoint_path": result.checkpoint_path,
@@ -314,13 +322,14 @@ def _postprocess_outputs(args: argparse.Namespace, result, context_frames: int, 
 def main() -> None:
     args = build_parser().parse_args()
     device_obj = resolve_device(args.device)
+    output_path = Path(args.output) if args.output is not None else Path(args.output_dir) / "result.json"
 
     if args.profile:
         result, context_frames, future_frames, total_frames = _run_profiled_training(args, device_obj)
     else:
         result, context_frames, future_frames, total_frames = _run_training(args)
 
-    _write_summary(Path(args.output), args, result, context_frames, future_frames, total_frames)
+    _write_summary(output_path, args, result, context_frames, future_frames, total_frames)
     _postprocess_outputs(args, result, context_frames, future_frames, total_frames)
 
 

@@ -14,8 +14,8 @@ from torch.utils.data import DataLoader
 from jepa_world_models.analysis.common import resolve_device
 from jepa_world_models.analysis.video_world_model import (
     LatentSequenceBank,
-    LatentWindowDataset,
     LatentWorldModelBundle,
+    LatentWindowDataset,
     build_latent_sequence_bank,
     _split_indices,
 )
@@ -28,6 +28,7 @@ class RolloutValidationResult:
     cache_path: str
     source_split: str
     predictor_mode: str
+    context_lag_steps: int
     subset_size: int
     image_size: int
     context_frames: int
@@ -49,6 +50,7 @@ class RolloutValidationResult:
             "cache_path": self.cache_path,
             "source_split": self.source_split,
             "predictor_mode": self.predictor_mode,
+            "context_lag_steps": self.context_lag_steps,
             "subset_size": self.subset_size,
             "image_size": self.image_size,
             "context_frames": self.context_frames,
@@ -98,7 +100,7 @@ def _make_test_dataset(bank: LatentSequenceBank, seed: int) -> LatentWindowDatas
     )
 
 
-def _one_step_prediction(model: TemporalLatentPredictor, context: torch.Tensor) -> torch.Tensor:
+def _one_step_prediction(model: nn.Module, context: torch.Tensor) -> torch.Tensor:
     return model(context)[:, 0, :]
 
 
@@ -120,7 +122,7 @@ def _summary_stats(values: torch.Tensor) -> dict[str, float]:
 
 @torch.inference_mode()
 def _rollout_batch_metrics(
-    model: TemporalLatentPredictor,
+    model: nn.Module,
     context: torch.Tensor,
     future: torch.Tensor,
 ) -> tuple[list[dict[str, float]], dict[str, list[torch.Tensor]]]:
@@ -188,7 +190,7 @@ def _rollout_batch_metrics(
     return horizon_metrics, raw
 
 
-def _gradient_norms_for_batch(model: TemporalLatentPredictor, context: torch.Tensor, future: torch.Tensor) -> list[dict[str, float]]:
+def _gradient_norms_for_batch(model: nn.Module, context: torch.Tensor, future: torch.Tensor) -> list[dict[str, float]]:
     full = torch.cat([context, future], dim=1)
     batch_size, context_steps, _ = context.shape
     future_steps = future.shape[1]
@@ -252,8 +254,8 @@ def build_rollout_validation_report(
     )
     train_indices, val_indices, test_indices = _split_indices(len(bank.sample_indices), seed)
     context_latents = bank.context_latents
-    if bundle.predictor_mode.strip().lower() == "one-lag":
-        context_latents = context_latents[:, -1:, :].contiguous()
+    context_lag_steps = int(getattr(bundle, "context_lag_steps", 0) or (1 if bundle.predictor_mode.strip().lower() == "one-lag" else bundle.context_steps))
+    context_latents = context_latents[:, -context_lag_steps:, :].contiguous()
     dataset = LatentWindowDataset(
         context_latents=context_latents[test_indices],
         future_latents=bank.future_latents[test_indices],
@@ -368,6 +370,7 @@ def build_rollout_validation_report(
         cache_path=str(cache_dir) if cache_dir is not None else "",
         source_split=source_split,
         predictor_mode=bundle.predictor_mode,
+        context_lag_steps=context_lag_steps,
         subset_size=subset_size,
         image_size=image_size,
         context_frames=context_frames,
