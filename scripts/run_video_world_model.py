@@ -79,6 +79,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Temporal predictor mode: multi-context or single-lag autoregression.",
     )
     parser.add_argument(
+        "--objective-name",
+        type=str,
+        default="balanced",
+        choices=(
+            "balanced",
+            "mse",
+            "normalized_mse",
+            "cosine",
+            "rollout_balanced",
+            "delta_balanced",
+            "delta_rollout_balanced",
+        ),
+        help="Training objective used for optimization.",
+    )
+    parser.add_argument(
+        "--rollout-decay",
+        type=float,
+        default=1.0,
+        help="Geometric decay factor used for rollout-weighted objectives.",
+    )
+    parser.add_argument(
         "--context-lag-steps",
         type=int,
         default=None,
@@ -198,6 +219,8 @@ def _run_training(args: argparse.Namespace):
         predictor_name=args.predictor_name,
         predictor_mode=args.predictor_mode,
         context_lag_steps=args.context_lag_steps,
+        objective_name=args.objective_name,
+        rollout_decay=args.rollout_decay,
         seed=args.seed,
         cache_dir=args.cache_dir,
         output_dir=args.output_dir,
@@ -226,6 +249,8 @@ def _write_summary(output: Path, args: argparse.Namespace, result, context_frame
     print(f"checkpoint_path={result.checkpoint_path}")
     print(f"encoder_name={result.encoder_name}")
     print(f"predictor_name={result.predictor_name}")
+    print(f"objective_name={result.objective_name}")
+    print(f"rollout_decay={result.rollout_decay}")
     print(f"cache_path={result.cache_path}")
     print(f"cache_manifest_path={result.cache_manifest_path}")
     print(f"predictor_mode={result.predictor_mode}")

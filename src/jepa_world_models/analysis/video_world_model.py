@@ -172,6 +172,8 @@ class LatentWorldModelBundle:
     num_layers: int
     num_heads: int
     dropout: float
+    objective_name: str
+    rollout_decay: float
     architecture_version: int
     checkpoint_path: str
     source_split: str
@@ -199,6 +201,8 @@ class LatentWorldModelBundle:
             "num_layers": self.num_layers,
             "num_heads": self.num_heads,
             "dropout": self.dropout,
+            "objective_name": self.objective_name,
+            "rollout_decay": self.rollout_decay,
             "architecture_version": self.architecture_version,
             "checkpoint_path": self.checkpoint_path,
             "source_split": self.source_split,
@@ -228,6 +232,8 @@ class LatentWorldModelBundle:
             num_layers=int(payload["num_layers"]),
             num_heads=int(payload["num_heads"]),
             dropout=float(payload["dropout"]),
+            objective_name=str(payload.get("objective_name", "balanced")),
+            rollout_decay=float(payload.get("rollout_decay", 1.0)),
             architecture_version=int(payload.get("architecture_version", 1)),
             checkpoint_path=str(payload["checkpoint_path"]),
             source_split=str(payload["source_split"]),
@@ -260,6 +266,8 @@ class LatentWorldModelResult:
     checkpoint_dir: str
     encoder_name: str
     predictor_name: str
+    objective_name: str
+    rollout_decay: float
     cache_path: str
     cache_manifest_path: str
     report_path: str
@@ -290,6 +298,8 @@ class LatentWorldModelResult:
             "checkpoint_dir": self.checkpoint_dir,
             "encoder_name": self.encoder_name,
             "predictor_name": self.predictor_name,
+            "objective_name": self.objective_name,
+            "rollout_decay": self.rollout_decay,
             "cache_path": self.cache_path,
             "cache_manifest_path": self.cache_manifest_path,
             "report_path": self.report_path,
@@ -356,9 +366,12 @@ def _resolve_dataloader_settings(requested_workers: int, batch_size: int) -> dic
 @dataclass(slots=True)
 class EpochRunResult:
     loss: float
+    objective_loss: float
     mse_loss: float
     normalized_mse_loss: float
     cosine_loss: float
+    rollout_loss: float
+    delta_loss: float
     step_history: list[dict[str, float]]
 
 class LatentWindowDataset(Dataset):
@@ -727,7 +740,16 @@ def _baseline_mean(context: torch.Tensor, future_steps: int) -> torch.Tensor:
     return mean.expand(-1, future_steps, -1).contiguous()
 
 
-def _latent_loss_components(pred: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:
+def _rollout_weights(future_steps: int, decay: float, device: torch.device) -> torch.Tensor:
+    if future_steps <= 0:
+        raise ValueError("future_steps must be positive.")
+    if decay <= 0:
+        raise ValueError("rollout_decay must be positive.")
+    weights = torch.tensor([decay**index for index in range(future_steps)], dtype=torch.float32, device=device)
+    return weights / weights.sum().clamp_min(1e-12)
+
+
+def _direct_loss_components(pred: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:
     flat_pred = pred.float().reshape(-1, pred.shape[-1])
     flat_target = target.float().reshape(-1, target.shape[-1])
     normalized_pred = F.normalize(flat_pred, dim=-1)
@@ -735,12 +757,89 @@ def _latent_loss_components(pred: torch.Tensor, target: torch.Tensor) -> dict[st
     mse_loss = F.mse_loss(flat_pred, flat_target)
     normalized_mse_loss = F.mse_loss(normalized_pred, normalized_target)
     cosine_loss = 1.0 - F.cosine_similarity(flat_pred, flat_target, dim=-1).mean()
-    combined_loss = normalized_mse_loss + 0.1 * mse_loss
     return {
-        "combined_loss": combined_loss,
         "mse_loss": mse_loss,
         "normalized_mse_loss": normalized_mse_loss,
         "cosine_loss": cosine_loss,
+    }
+
+
+def _objective_loss_components(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    context: torch.Tensor,
+    objective_name: str,
+    rollout_decay: float,
+) -> dict[str, torch.Tensor]:
+    objective = objective_name.strip().lower()
+    direct = _direct_loss_components(pred, target)
+    device = pred.device
+    future_steps = int(pred.shape[1])
+    weights = _rollout_weights(future_steps, rollout_decay, device)
+
+    if objective in {"balanced", "combined", "default"}:
+        objective_loss = direct["normalized_mse_loss"] + 0.1 * direct["mse_loss"] + 0.1 * direct["cosine_loss"]
+        rollout_loss = objective_loss
+        delta_loss = objective_loss
+    elif objective == "mse":
+        objective_loss = direct["mse_loss"]
+        rollout_loss = objective_loss
+        delta_loss = objective_loss
+    elif objective == "normalized_mse":
+        objective_loss = direct["normalized_mse_loss"]
+        rollout_loss = objective_loss
+        delta_loss = objective_loss
+    elif objective == "cosine":
+        objective_loss = direct["cosine_loss"]
+        rollout_loss = objective_loss
+        delta_loss = objective_loss
+    else:
+        rollout_pred = pred
+        rollout_target = target
+        context_anchor = context[:, -1:, :].expand_as(pred)
+        if objective in {"delta_balanced", "delta_rollout_balanced"}:
+            rollout_pred = pred - context_anchor
+            rollout_target = target - context_anchor
+        per_step_mse = ((rollout_pred.float() - rollout_target.float()) ** 2).mean(dim=-1)
+        per_step_norm = (
+            F.mse_loss(
+                F.normalize(rollout_pred.float(), dim=-1),
+                F.normalize(rollout_target.float(), dim=-1),
+                reduction="none",
+            )
+            .mean(dim=-1)
+        )
+        per_step_cosine = 1.0 - F.cosine_similarity(
+            rollout_pred.float().reshape(-1, rollout_pred.shape[-1]),
+            rollout_target.float().reshape(-1, rollout_target.shape[-1]),
+            dim=-1,
+        ).reshape(rollout_pred.shape[0], rollout_pred.shape[1])
+        rollout_mse = (per_step_mse * weights).sum()
+        rollout_norm = (per_step_norm * weights).sum()
+        rollout_cosine = (per_step_cosine * weights).sum()
+        rollout_loss = rollout_norm + 0.1 * rollout_mse + 0.1 * rollout_cosine
+        delta_loss = rollout_loss
+        if objective == "delta_balanced":
+            objective_loss = rollout_loss
+        elif objective == "delta_rollout_balanced":
+            objective_loss = rollout_loss
+        elif objective == "rollout_balanced":
+            objective_loss = rollout_loss
+        else:
+            raise ValueError(
+                f"Unsupported objective_name={objective_name}. "
+                "Use balanced, mse, normalized_mse, cosine, rollout_balanced, delta_balanced, or delta_rollout_balanced."
+            )
+
+    return {
+        "combined_loss": objective_loss,
+        "objective_loss": objective_loss,
+        "mse_loss": direct["mse_loss"],
+        "normalized_mse_loss": direct["normalized_mse_loss"],
+        "cosine_loss": direct["cosine_loss"],
+        "rollout_loss": rollout_loss,
+        "delta_loss": delta_loss,
     }
 
 
@@ -791,6 +890,8 @@ def _run_epoch(
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
     *,
+    objective_name: str,
+    rollout_decay: float,
     desc: str | None = None,
     show_progress: bool = False,
     epoch_index: int | None = None,
@@ -800,7 +901,15 @@ def _run_epoch(
     model.train(is_train)
     context = torch.enable_grad() if is_train else torch.no_grad()
     iterator = tqdm(loader, desc=desc, leave=False) if show_progress else loader
-    totals = {"combined_loss": 0.0, "mse_loss": 0.0, "normalized_mse_loss": 0.0, "cosine_loss": 0.0}
+    totals = {
+        "combined_loss": 0.0,
+        "objective_loss": 0.0,
+        "mse_loss": 0.0,
+        "normalized_mse_loss": 0.0,
+        "cosine_loss": 0.0,
+        "rollout_loss": 0.0,
+        "delta_loss": 0.0,
+    }
     step_history: list[dict[str, float]] = []
     num_batches = 0
     with context:
@@ -810,7 +919,13 @@ def _run_epoch(
             if is_train:
                 optimizer.zero_grad(set_to_none=True)
             preds = model(inputs)
-            loss_components = _latent_loss_components(preds, targets)
+            loss_components = _objective_loss_components(
+                preds,
+                targets,
+                context=inputs,
+                objective_name=objective_name,
+                rollout_decay=rollout_decay,
+            )
             loss = loss_components["combined_loss"]
             if is_train:
                 loss.backward()
@@ -823,26 +938,46 @@ def _run_epoch(
                 record = {
                     "batch_index": float(batch_index),
                     "combined_loss": float(loss.item()),
+                    "objective_loss": float(loss_components["objective_loss"].item()),
                     "mse_loss": float(loss_components["mse_loss"].item()),
                     "normalized_mse_loss": float(loss_components["normalized_mse_loss"].item()),
                     "cosine_loss": float(loss_components["cosine_loss"].item()),
+                    "rollout_loss": float(loss_components["rollout_loss"].item()),
+                    "delta_loss": float(loss_components["delta_loss"].item()),
                     "latent_mse": float(loss_components["mse_loss"].item()),
                     "normalized_latent_mse": float(loss_components["normalized_mse_loss"].item()),
                     "cosine_similarity": float(1.0 - loss_components["cosine_loss"].item()),
+                    "objective_name": objective_name,
                 }
                 if epoch_index is not None:
                     record["epoch"] = float(epoch_index)
                 step_history.append(record)
             if show_progress and hasattr(iterator, "set_postfix"):
-                iterator.set_postfix(loss=f"{loss.item():.4g}", mse=f"{loss_components['mse_loss'].item():.4g}", norm=f"{loss_components['normalized_mse_loss'].item():.4g}")
+                iterator.set_postfix(
+                    loss=f"{loss.item():.4g}",
+                    mse=f"{loss_components['mse_loss'].item():.4g}",
+                    norm=f"{loss_components['normalized_mse_loss'].item():.4g}",
+                )
     if num_batches == 0:
-        return EpochRunResult(float("nan"), float("nan"), float("nan"), float("nan"), step_history)
+        return EpochRunResult(
+            float("nan"),
+            float("nan"),
+            float("nan"),
+            float("nan"),
+            float("nan"),
+            float("nan"),
+            float("nan"),
+            step_history,
+        )
     scale = 1.0 / num_batches
     return EpochRunResult(
         loss=totals["combined_loss"] * scale,
+        objective_loss=totals["objective_loss"] * scale,
         mse_loss=totals["mse_loss"] * scale,
         normalized_mse_loss=totals["normalized_mse_loss"] * scale,
         cosine_loss=totals["cosine_loss"] * scale,
+        rollout_loss=totals["rollout_loss"] * scale,
+        delta_loss=totals["delta_loss"] * scale,
         step_history=step_history,
     )
 
@@ -852,7 +987,10 @@ def _evaluate_dataset(
     model: nn.Module,
     dataset: LatentWindowDataset,
     device: torch.device,
-) -> tuple[dict[str, float], dict[str, float], list[dict[str, float]]]:
+    *,
+    objective_name: str,
+    rollout_decay: float,
+) -> tuple[dict[str, float], dict[str, float], list[dict[str, float]], float]:
     loader = _make_loader(dataset, batch_size=32, shuffle=False, num_workers=0)
     model.eval()
     model_preds: list[torch.Tensor] = []
@@ -860,12 +998,21 @@ def _evaluate_dataset(
     repeat_preds: list[torch.Tensor] = []
     mean_preds: list[torch.Tensor] = []
     rows: list[dict[str, float]] = []
+    objective_losses: list[torch.Tensor] = []
 
     for batch in loader:
         context = batch["context"].to(device)
         future = batch["future"].to(device)
         pred = model(context).cpu()
         target = future.cpu()
+        objective_components = _objective_loss_components(
+            pred,
+            target,
+            context=batch["context"],
+            objective_name=objective_name,
+            rollout_decay=rollout_decay,
+        )
+        objective_losses.append(objective_components["objective_loss"].detach().cpu())
         repeat = _baseline_repeat_last(batch["context"], model.future_steps)
         mean = _baseline_mean(batch["context"], model.future_steps)
         model_preds.append(pred)
@@ -911,7 +1058,8 @@ def _evaluate_dataset(
         "repeat_last": _latent_metrics(repeat_concat, target_concat),
         "mean_context": _latent_metrics(mean_concat, target_concat),
     }
-    return metrics, baseline_metrics, rows
+    objective_loss = float(torch.stack(objective_losses).mean().item()) if objective_losses else float("nan")
+    return metrics, baseline_metrics, rows, objective_loss
 
 
 def _compare_against_baselines(
@@ -989,6 +1137,8 @@ def train_video_world_model(
     predictor_name: str = "causal_transformer",
     predictor_mode: str = "context",
     context_lag_steps: int | None = None,
+    objective_name: str = "balanced",
+    rollout_decay: float = 1.0,
     seed: int = 0,
     cache_dir: str | Path | None = "logs/video_world_model/cache",
     output_dir: str | Path = "logs/video_world_model",
@@ -1075,6 +1225,7 @@ def train_video_world_model(
         predictor_mode=predictor_mode,
         context_lag_steps=context_lag_steps,
     )
+    objective_name = objective_name.strip().lower()
 
     train_context_latents = _select_context_window(bank.context_latents, resolved_context_lag_steps)
     train_dataset = LatentWindowDataset(
@@ -1161,27 +1312,42 @@ def train_video_world_model(
             train_loader,
             optimizer,
             device_obj,
+            objective_name=objective_name,
+            rollout_decay=rollout_decay,
             desc=f"train {epoch + 1}/{epochs}",
             show_progress=True,
             epoch_index=epoch + 1,
             collect_step_history=True,
         )
-        val_result = _run_epoch(model, val_loader, None, device_obj)
+        val_result = _run_epoch(
+            model,
+            val_loader,
+            None,
+            device_obj,
+            objective_name=objective_name,
+            rollout_decay=rollout_decay,
+        )
         epoch_bar.set_postfix(train=f"{train_result.loss:.6f}", val=f"{val_result.loss:.6f}")
         history.append(
             {
                 "epoch": float(epoch + 1),
                 "train_loss": float(train_result.loss),
+                "train_objective_loss": float(train_result.objective_loss),
                 "train_mse_loss": float(train_result.mse_loss),
                 "train_normalized_mse_loss": float(train_result.normalized_mse_loss),
                 "train_cosine_loss": float(train_result.cosine_loss),
+                "train_rollout_loss": float(train_result.rollout_loss),
+                "train_delta_loss": float(train_result.delta_loss),
                 "train_latent_mse": float(train_result.mse_loss),
                 "train_normalized_latent_mse": float(train_result.normalized_mse_loss),
                 "train_cosine_similarity": float(1.0 - train_result.cosine_loss),
                 "val_loss": float(val_result.loss),
+                "val_objective_loss": float(val_result.objective_loss),
                 "val_mse_loss": float(val_result.mse_loss),
                 "val_normalized_mse_loss": float(val_result.normalized_mse_loss),
                 "val_cosine_loss": float(val_result.cosine_loss),
+                "val_rollout_loss": float(val_result.rollout_loss),
+                "val_delta_loss": float(val_result.delta_loss),
                 "val_latent_mse": float(val_result.mse_loss),
                 "val_normalized_latent_mse": float(val_result.normalized_mse_loss),
                 "val_cosine_similarity": float(1.0 - val_result.cosine_loss),
@@ -1204,6 +1370,8 @@ def train_video_world_model(
             num_layers=num_layers,
             num_heads=num_heads,
             dropout=dropout,
+            objective_name=objective_name,
+            rollout_decay=rollout_decay,
             architecture_version=LATENT_WORLD_MODEL_ARCHITECTURE_VERSION,
             checkpoint_path=str(checkpoint_path),
             source_split=source_split,
@@ -1225,9 +1393,27 @@ def train_video_world_model(
     model.load_state_dict(best_state)
     model = model.to(device_obj)
 
-    train_metrics, train_baselines, _ = _evaluate_dataset(model, train_dataset, device_obj)
-    val_metrics, val_baselines, _ = _evaluate_dataset(model, val_dataset, device_obj)
-    test_metrics, test_baselines, test_rows = _evaluate_dataset(model, test_dataset, device_obj)
+    train_metrics, train_baselines, _, train_objective_loss = _evaluate_dataset(
+        model,
+        train_dataset,
+        device_obj,
+        objective_name=objective_name,
+        rollout_decay=rollout_decay,
+    )
+    val_metrics, val_baselines, _, val_objective_loss = _evaluate_dataset(
+        model,
+        val_dataset,
+        device_obj,
+        objective_name=objective_name,
+        rollout_decay=rollout_decay,
+    )
+    test_metrics, test_baselines, test_rows, test_objective_loss = _evaluate_dataset(
+        model,
+        test_dataset,
+        device_obj,
+        objective_name=objective_name,
+        rollout_decay=rollout_decay,
+    )
 
     baseline_metrics = {
         "train": train_baselines,
@@ -1254,6 +1440,8 @@ def train_video_world_model(
         num_layers=num_layers,
         num_heads=num_heads,
         dropout=dropout,
+        objective_name=objective_name,
+        rollout_decay=rollout_decay,
         architecture_version=LATENT_WORLD_MODEL_ARCHITECTURE_VERSION,
         checkpoint_path=str(checkpoint_path),
         source_split=source_split,
@@ -1278,7 +1466,7 @@ def train_video_world_model(
     result = LatentWorldModelResult(
         train_loss=float(best_train),
         val_loss=float(best_val),
-        test_loss=float(test_metrics["normalized_latent_mse"] + 0.1 * test_metrics["latent_mse"]),
+        test_loss=float(test_objective_loss),
         train_metrics=train_metrics,
         val_metrics=val_metrics,
         test_metrics=test_metrics,
@@ -1288,6 +1476,8 @@ def train_video_world_model(
         checkpoint_dir=str(checkpoint_dir),
         encoder_name=encoder_name,
         predictor_name=predictor_name,
+        objective_name=objective_name,
+        rollout_decay=rollout_decay,
         cache_path=str(cache_path) if cache_path is not None else "",
         cache_manifest_path=str(cache_path.with_suffix(".json")) if cache_path is not None else "",
         report_path=str(report_path),
