@@ -45,3 +45,10 @@
 - Update feature specs when the roadmap changes.
 - Keep the workflow stable even when the implementation changes.
 
+## Phase 7: Rollout Objectives
+
+- Compare direct latent regression against delta prediction.
+- Add rollout-aware objectives and horizon weighting.
+- Preserve the pluggable encoder and predictor interfaces.
+- Treat saved results, plots, and validation artifacts as part of the feature.
+
