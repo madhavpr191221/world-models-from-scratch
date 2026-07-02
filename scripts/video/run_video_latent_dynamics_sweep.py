@@ -51,6 +51,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-heads", type=int, default=4, help="Predictor attention heads.")
     parser.add_argument("--dropout", type=float, default=0.1, help="Predictor dropout rate.")
     parser.add_argument(
+        "--objective-name",
+        type=str,
+        default="balanced",
+        choices=(
+            "balanced",
+            "mse",
+            "normalized_mse",
+            "cosine",
+            "rollout_balanced",
+            "delta_balanced",
+            "delta_rollout_balanced",
+        ),
+        help="Training objective used for optimization.",
+    )
+    parser.add_argument(
+        "--rollout-decay",
+        type=float,
+        default=1.0,
+        help="Geometric decay factor used for rollout-weighted objectives.",
+    )
+    parser.add_argument(
         "--context-lag-steps",
         type=int,
         default=None,
@@ -192,14 +213,16 @@ def main() -> None:
                     lr=args.lr,
                     hidden_dim=args.hidden_dim,
                     num_layers=args.num_layers,
-                    num_heads=args.num_heads,
-                    dropout=args.dropout,
-                    predictor_name=predictor_name,
-                    predictor_mode="context",
-                    context_lag_steps=lag_steps,
-                    seed=args.seed,
-                    cache_dir=cache_root,
-                    output_dir=pair_dir,
+                num_heads=args.num_heads,
+                dropout=args.dropout,
+                predictor_name=predictor_name,
+                predictor_mode="context",
+                context_lag_steps=lag_steps,
+                objective_name=args.objective_name,
+                rollout_decay=args.rollout_decay,
+                seed=args.seed,
+                cache_dir=cache_root,
+                output_dir=pair_dir,
                     device=args.device,
                 )
                 validation_report = build_rollout_validation_report(
@@ -239,6 +262,7 @@ def main() -> None:
                         "train_loss": result.train_loss,
                         "val_loss": result.val_loss,
                         "test_loss": result.test_loss,
+                        "objective_name": result.objective_name,
                         "test_verdict": result.baseline_verdict["test"]["verdict"],
                         "validation_report_path": str(validation_path),
                     }

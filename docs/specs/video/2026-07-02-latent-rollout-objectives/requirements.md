@@ -68,6 +68,22 @@ where `\ell` can include:
 - rollout consistency penalties,
 - delta consistency penalties.
 
+Concrete objective modes supported by the implementation:
+
+- `balanced`
+- `mse`
+- `normalized_mse`
+- `cosine`
+- `rollout_balanced`
+- `delta_balanced`
+- `delta_rollout_balanced`
+
+The rollout-weighted modes use a configurable geometric decay factor `\gamma`:
+
+$$
+w_r \propto \gamma^{r-1}.
+$$
+
 ## 5. Required Interfaces
 
 ### 5.1 Predictor Interface
@@ -130,4 +146,3 @@ flowchart TD
     E --> F
     F --> G[Metrics, plots, reports]
 ```
-

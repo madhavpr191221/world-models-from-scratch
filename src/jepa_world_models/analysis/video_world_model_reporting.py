@@ -31,15 +31,21 @@ def _plot_step_history(result: LatentWorldModelResult, output_dir: Path) -> Path
 
     steps = np.arange(len(result.step_history))
     combined = [row["combined_loss"] for row in result.step_history]
+    objective = [row.get("objective_loss", row["combined_loss"]) for row in result.step_history]
     mse = [row["mse_loss"] for row in result.step_history]
     norm_mse = [row["normalized_mse_loss"] for row in result.step_history]
     cosine = [row["cosine_loss"] for row in result.step_history]
+    rollout = [row.get("rollout_loss", row["combined_loss"]) for row in result.step_history]
+    delta = [row.get("delta_loss", row["combined_loss"]) for row in result.step_history]
 
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot(steps, combined, linewidth=1.2, label="combined")
+    ax.plot(steps, objective, linewidth=1.0, label="objective")
     ax.plot(steps, mse, linewidth=1.0, label="mse")
     ax.plot(steps, norm_mse, linewidth=1.0, label="normalized mse")
     ax.plot(steps, cosine, linewidth=1.0, label="cosine loss")
+    ax.plot(steps, rollout, linewidth=1.0, label="rollout")
+    ax.plot(steps, delta, linewidth=1.0, label="delta")
     ax.set_title("Training step loss components")
     ax.set_xlabel("training step")
     ax.set_ylabel("loss")
@@ -88,20 +94,22 @@ def _plot_epoch_components(result: LatentWorldModelResult, output_dir: Path) -> 
     epochs = [row["epoch"] for row in result.history]
     metrics = [
         ("combined_loss", "Combined loss"),
+        ("objective_loss", "Objective loss"),
         ("mse_loss", "MSE loss"),
         ("normalized_mse_loss", "Normalized MSE loss"),
         ("cosine_loss", "Cosine loss"),
+        ("rollout_loss", "Rollout loss"),
     ]
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    axes = axes.reshape(2, 2)
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+    axes = axes.reshape(2, 3)
     for axis, (metric_key, metric_title) in zip(axes.flat, metrics):
         if metric_key == "combined_loss":
             train_values = [row["train_loss"] for row in result.history]
             val_values = [row["val_loss"] for row in result.history]
         else:
-            train_values = [row[f"train_{metric_key}"] for row in result.history]
-            val_values = [row[f"val_{metric_key}"] for row in result.history]
+            train_values = [row.get(f"train_{metric_key}", row["train_loss"]) for row in result.history]
+            val_values = [row.get(f"val_{metric_key}", row["val_loss"]) for row in result.history]
         axis.plot(epochs, train_values, marker="o", linewidth=1.5, label="train")
         axis.plot(epochs, val_values, marker="o", linewidth=1.5, label="val")
         axis.set_title(metric_title)
@@ -109,6 +117,8 @@ def _plot_epoch_components(result: LatentWorldModelResult, output_dir: Path) -> 
         axis.grid(True, alpha=0.2)
         axis.set_yscale("log")
     axes[0, 0].legend(frameon=False)
+    for axis in axes.flat[len(metrics):]:
+        axis.axis("off")
     fig.suptitle("Epoch-level loss components")
     fig.tight_layout()
 

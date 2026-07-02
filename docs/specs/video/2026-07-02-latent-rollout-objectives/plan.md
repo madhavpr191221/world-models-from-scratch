@@ -28,6 +28,8 @@ Do not skip steps.
 - Add direct latent regression.
 - Add delta prediction.
 - Add an objective selector in the CLI and config.
+- Support `balanced`, `mse`, `normalized_mse`, `cosine`, `rollout_balanced`, `delta_balanced`, and `delta_rollout_balanced`.
+- Add a rollout decay parameter for horizon weighting.
 
 ### Step 3: Add rollout-aware loss
 
@@ -117,4 +119,3 @@ flowchart TD
     F --> G[Artifacts]
     G --> H[Compare lag and model families]
 ```
-
