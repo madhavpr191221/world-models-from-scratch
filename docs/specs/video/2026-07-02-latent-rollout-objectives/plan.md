@@ -30,12 +30,62 @@ Do not skip steps.
 - Add an objective selector in the CLI and config.
 - Support `balanced`, `mse`, `normalized_mse`, `cosine`, `rollout_balanced`, `delta_balanced`, and `delta_rollout_balanced`.
 - Add a rollout decay parameter for horizon weighting.
+- Keep the direct losses and rollout losses available as logged metrics at train, validation, and test time.
+
+### 2.1 Objective menu
+
+The implementation should treat the losses as configurable contracts, not hard-coded behavior:
+
+$$
+\mathcal{L}_{\mathrm{mse}} = \ell_{\mathrm{mse}}, \qquad
+\mathcal{L}_{\mathrm{norm}} = \ell_{\mathrm{norm}}, \qquad
+\mathcal{L}_{\cos} = \ell_{\cos}.
+$$
+
+The mixed direct objective is:
+
+$$
+\mathcal{L}_{\mathrm{balanced}}
+=
+\ell_{\mathrm{norm}} + 0.1\,\ell_{\mathrm{mse}} + 0.1\,\ell_{\cos}.
+$$
+
+The rollout-weighted objective is:
+
+$$
+\mathcal{L}_{\mathrm{rollout}}
+=
+\sum_{r=1}^{F} w_r
+\Big(
+\ell_{\mathrm{norm}}(\hat{\mathbf{z}}_{r}, \mathbf{z}_{r})
++ 0.1\,\ell_{\mathrm{mse}}(\hat{\mathbf{z}}_{r}, \mathbf{z}_{r})
++ 0.1\,\ell_{\cos}(\hat{\mathbf{z}}_{r}, \mathbf{z}_{r})
+\Big),
+\qquad
+w_r \propto \gamma^{r-1}.
+$$
+
+The delta variants replace the target with residual offsets from the last context latent `\mathbf{c} = z_t`:
+
+$$
+\Delta \hat{\mathbf{z}}_{r} = \hat{\mathbf{z}}_{r} - \mathbf{c},
+\qquad
+\Delta \mathbf{z}_{r} = \mathbf{z}_{r} - \mathbf{c}.
+$$
+
+At test time, these losses are not optimized but are still reported:
+
+- direct losses measure absolute latent fit,
+- rollout losses measure horizon sensitivity,
+- delta losses measure motion-relative fit,
+- baselines show whether the predictor is doing better than copying the last latent or averaging the context.
 
 ### Step 3: Add rollout-aware loss
 
 - Train against multi-horizon rollout targets.
 - Keep teacher-forced evaluation available.
 - Log each horizon separately.
+- For delta objectives, convert residual predictions back to absolute latents during evaluation so the same metrics can be compared across objective families.
 
 ### Step 4: Compare lag and model families
 
