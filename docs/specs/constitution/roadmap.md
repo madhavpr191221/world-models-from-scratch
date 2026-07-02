@@ -51,4 +51,6 @@
 - Add rollout-aware objectives and horizon weighting.
 - Preserve the pluggable encoder and predictor interfaces.
 - Treat saved results, plots, and validation artifacts as part of the feature.
+- Sweep longer rollout horizons so drift, alignment, and error growth can be studied as a function of `r`.
+- Keep multi-scale supervision available as the baseline long-horizon objective.
 
