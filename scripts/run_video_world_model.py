@@ -11,6 +11,7 @@ from torch.profiler import ProfilerActivity, profile, record_function
 from jepa_world_models.analysis.common import resolve_device
 from jepa_world_models.analysis.video_world_model import train_video_world_model
 from jepa_world_models.analysis.video_world_model_plots import write_video_world_model_plots
+from jepa_world_models.analysis.video_rollout_horizon_sweep import run_rollout_horizon_sweep
 from jepa_world_models.analysis.video_world_model_validation import (
     build_rollout_validation_report,
     write_rollout_validation_report,
@@ -182,6 +183,31 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a JSON summary of the profiler run. Defaults to <output-dir>/profile/profile_summary.json.",
     )
+    parser.add_argument(
+        "--rollout-future-seconds-grid",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Optional post-training horizon sweep, for example 1.5 3.0 4.5 6.0.",
+    )
+    parser.add_argument(
+        "--rollout-sweep-output-dir",
+        type=str,
+        default=None,
+        help="Directory for horizon sweep outputs. Defaults to <output-dir>/horizon_sweep.",
+    )
+    parser.add_argument(
+        "--rollout-sweep-source-split",
+        type=str,
+        default=None,
+        help="Optional source split for the sweep. Defaults to validation or test split when available.",
+    )
+    parser.add_argument(
+        "--rollout-sweep-batch-limit",
+        type=int,
+        default=1,
+        help="Maximum number of batches to evaluate per horizon in the sweep.",
+    )
     return parser
 
 
@@ -342,6 +368,27 @@ def _postprocess_outputs(args: argparse.Namespace, result, context_frames: int, 
         plot_paths = write_video_world_model_plots(result, plot_dir, validation_report=validation_report)
         for name, path in plot_paths.items():
             print(f"{name}_plot={path}")
+
+    if args.rollout_future_seconds_grid:
+        sweep_output_dir = Path(args.rollout_sweep_output_dir) if args.rollout_sweep_output_dir is not None else Path(args.output_dir) / "horizon_sweep"
+        sweep_source_split = args.rollout_sweep_source_split or args.validation_source_split or args.test_source_split or args.source_split
+        sweep_result = run_rollout_horizon_sweep(
+            checkpoint_path=result.checkpoint_path,
+            data_root=args.data_root,
+            source_split=sweep_source_split,
+            subset_size=args.subset_size,
+            image_size=args.image_size,
+            context_seconds=args.context_seconds,
+            future_seconds_grid=args.rollout_future_seconds_grid,
+            sample_fps=args.sample_fps,
+            feature_batch_size=args.feature_batch_size,
+            seed=args.seed,
+            cache_dir=args.cache_dir,
+            output_dir=sweep_output_dir,
+            device=args.device,
+            batch_limit=max(1, int(args.rollout_sweep_batch_limit)),
+        )
+        print(f"Wrote horizon sweep to {sweep_result.output_dir}")
 
 
 def main() -> None:
